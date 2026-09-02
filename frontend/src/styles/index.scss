@@ -51,6 +51,12 @@ a {
   align-items: stretch;
 }
 
+.page-grid--charts {
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  margin-top: 1.5rem;
+  align-items: stretch;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

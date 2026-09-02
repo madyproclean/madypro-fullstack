@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowUp, ArrowDown, Settings } from 'lucide-react';
+import { ArrowUp, ArrowDown, Settings, Users, UserCheck, UserX, MapPinOff, PackageX, AlertTriangle } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { getDashboardSummary, getDashboardLayout, setDashboardLayout, DashboardWidgetConfig } from '../../services/api/reports.api';
 import { listLowStockInventory } from '../../services/api/inventory.api';
@@ -7,7 +7,30 @@ import { DashboardSummary } from '../../types/dashboard';
 import { InventoryItem } from '../../types/inventory';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { StatCard, StatCardBadgeTone } from '../../components/ui/StatCard';
+import { Badge, BadgeTone } from '../../components/ui/Badge';
+import { BarChartCard } from '../../components/charts/BarChartCard';
+import { DonutChartCard } from '../../components/charts/DonutChartCard';
 import { env } from '../../config/env';
+
+const METRIC_ICONS: Record<string, { icon: typeof Users; tone: StatCardBadgeTone }> = {
+  'Agents planifiés': { icon: Users, tone: 'blue' },
+  'Agents pointés': { icon: UserCheck, tone: 'green' },
+  'Agents absents': { icon: UserX, tone: 'red' },
+  'Sites impactés': { icon: MapPinOff, tone: 'orange' },
+};
+
+const PLANNING_STATUS_TONE: Record<DashboardSummary['planning'][number]['status'], BadgeTone> = {
+  ON_TIME: 'success',
+  LATE: 'warning',
+  ABSENT: 'danger',
+};
+
+const PLANNING_STATUS_LABEL: Record<DashboardSummary['planning'][number]['status'], (checkIn?: string) => string> = {
+  ON_TIME: (checkIn) => `Présent ${checkIn ?? ''}`.trim(),
+  LATE: (checkIn) => `Retard ${checkIn ?? ''}`.trim(),
+  ABSENT: () => 'Absent',
+};
 
 const WIDGET_LABELS: Record<string, string> = {
   metrics: 'Indicateurs',
@@ -84,7 +107,7 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     if (!token) return;
     setLoading(true);
-    getDashboardSummary(token)
+    getDashboardSummary(token, filters?.date)
       .then((data) => {
         setSummary(data);
         setFilters((prev) => prev ?? createDefaultFilters(data.defaultDate));
@@ -94,7 +117,7 @@ export const DashboardPage: React.FC = () => {
         setError(err instanceof Error ? err.message : "Impossible de charger le tableau de bord");
       })
       .finally(() => setLoading(false));
-  }, [token, refreshTick]);
+  }, [token, refreshTick, filters?.date]);
 
   useEffect(() => {
     if (!token) return;
@@ -106,9 +129,10 @@ export const DashboardPage: React.FC = () => {
     source.addEventListener('intervention.status', handler);
     source.addEventListener('intervention.created', handler);
     source.addEventListener('intervention.updated', handler);
-    source.onerror = () => {
-      source.close();
-    };
+    // Ne pas fermer la connexion ici : EventSource se reconnecte automatiquement
+    // après une coupure (redémarrage backend, réseau) tant qu'on ne l'a pas fermée
+    // nous-mêmes. Fermer sur erreur désactivait silencieusement les mises à jour
+    // en direct après la première coupure.
     return () => source.close();
   }, [token]);
 
@@ -120,6 +144,20 @@ export const DashboardPage: React.FC = () => {
       if (filters.search) {
         const term = filters.search.toLowerCase();
         const target = `${record.agent} ${record.site} ${record.supervisor}`.toLowerCase();
+        if (!target.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [summary, filters]);
+
+  const filteredAlerts = useMemo(() => {
+    if (!summary || !filters) return [];
+    return summary.alerts.filter((alert) => {
+      if (filters.site !== 'all' && alert.site !== filters.site) return false;
+      if (filters.supervisor !== 'all' && alert.supervisor !== filters.supervisor) return false;
+      if (filters.search) {
+        const term = filters.search.toLowerCase();
+        const target = `${alert.agent} ${alert.site} ${alert.supervisor}`.toLowerCase();
         if (!target.includes(term)) return false;
       }
       return true;
@@ -141,6 +179,35 @@ export const DashboardPage: React.FC = () => {
       { title: 'Sites impactés', value: absSites.size },
     ];
   }, [filteredRecords, summary, filters]);
+
+  // Agrégats dérivés des mêmes enregistrements filtrés (pas de nouvelle source
+  // de données) pour alimenter les graphiques — répartition présents/absents
+  // par site, et répartition des statuts de pointage.
+  const siteBreakdown = useMemo(() => {
+    const bySite = new Map<string, { site: string; Présents: number; Absents: number }>();
+    filteredRecords.forEach((record) => {
+      const entry = bySite.get(record.site) ?? { site: record.site, Présents: 0, Absents: 0 };
+      if (record.status === 'ABSENT') entry.Absents += 1;
+      else entry.Présents += 1;
+      bySite.set(record.site, entry);
+    });
+    return Array.from(bySite.values());
+  }, [filteredRecords]);
+
+  const statusBreakdown = useMemo(() => {
+    if (filteredRecords.length === 0) return [];
+    const counts = { ON_TIME: 0, LATE: 0, ABSENT: 0 };
+    filteredRecords.forEach((record) => {
+      counts[record.status] += 1;
+    });
+    const total = filteredRecords.length;
+    const toPercent = (count: number) => Math.round((count / total) * 100);
+    return [
+      { label: 'À l’heure', value: toPercent(counts.ON_TIME) },
+      { label: 'En retard', value: toPercent(counts.LATE) },
+      { label: 'Absents', value: toPercent(counts.ABSENT) },
+    ].filter((entry) => entry.value > 0);
+  }, [filteredRecords]);
 
   const handleFilterChange = (key: keyof FilterState, value: string) => {
     setFilters((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -236,13 +303,39 @@ export const DashboardPage: React.FC = () => {
             <div key={widget.id}>
               {editControls}
               <div className="page-grid">
-                {metrics.map((metric) => (
-                  <article key={metric.title} className="card">
-                    <span className="card__meta">{metric.title}</span>
-                    <p className="card__value">{metric.value}</p>
-                  </article>
-                ))}
+                {metrics.map((metric) => {
+                  const meta = METRIC_ICONS[metric.title];
+                  return (
+                    <StatCard
+                      key={metric.title}
+                      icon={meta?.icon ?? Users}
+                      badgeTone={meta?.tone ?? 'blue'}
+                      value={metric.value}
+                      label={metric.title}
+                    />
+                  );
+                })}
               </div>
+              {(siteBreakdown.length > 0 || statusBreakdown.length > 0) && (
+                <div className="page-grid page-grid--charts">
+                  {siteBreakdown.length > 0 && (
+                    <BarChartCard
+                      title="Présence par site"
+                      data={siteBreakdown}
+                      xKey="site"
+                      series={['Présents', 'Absents']}
+                    />
+                  )}
+                  {statusBreakdown.length > 0 && (
+                    <DonutChartCard
+                      title="Répartition des pointages"
+                      data={statusBreakdown}
+                      centerValue={filteredRecords.length}
+                      centerLabel="agents"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           );
         }
@@ -252,7 +345,7 @@ export const DashboardPage: React.FC = () => {
           return (
             <div key={widget.id}>
               {editControls}
-              <section className="panel" style={{ borderColor: '#f59e0b' }}>
+              <section className="panel">
                 <h3>Réapprovisionnement nécessaire</h3>
                 {lowStock.length === 0 ? (
                   <p className="card__meta">Aucune alerte de stock.</p>
@@ -261,9 +354,9 @@ export const DashboardPage: React.FC = () => {
                     {lowStock.map((item) => (
                       <li key={item.id}>
                         <span>{item.site?.name ?? '—'}</span>
-                        <span style={{ color: '#b45309' }}>
-                          {item.name} : {item.quantity} / {item.minThreshold} {item.unit}
-                        </span>
+                        <Badge tone="warning" icon={PackageX}>
+                          {item.name} · {item.quantity}/{item.minThreshold} {item.unit}
+                        </Badge>
                       </li>
                     ))}
                   </ul>
@@ -280,9 +373,15 @@ export const DashboardPage: React.FC = () => {
               <section className="panel">
                 <h3>Alertes</h3>
                 <ul className="list-line">
-                  {summary.alerts.map((alert) => (
+                  {filteredAlerts.length === 0 && <li>Aucune alerte.</li>}
+                  {filteredAlerts.map((alert) => (
                     <li key={alert.id}>
-                      <span>{alert.type}</span>
+                      <Badge
+                        tone={alert.severity === 'error' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'}
+                        icon={AlertTriangle}
+                      >
+                        {alert.type}
+                      </Badge>
                       <span>{alert.description}</span>
                     </li>
                   ))}
@@ -315,21 +414,9 @@ export const DashboardPage: React.FC = () => {
                           <td>{record.site}</td>
                           <td>{record.supervisor}</td>
                           <td>
-                            <span
-                              className={`status-chip ${
-                                record.status === 'ON_TIME'
-                                  ? 'status-chip--success'
-                                  : record.status === 'LATE'
-                                  ? 'status-chip--warning'
-                                  : 'status-chip--info'
-                              }`}
-                            >
-                              {record.status === 'ON_TIME'
-                                ? `Présent ${record.checkIn}`
-                                : record.status === 'LATE'
-                                ? `Retard ${record.checkIn}`
-                                : 'Absent'}
-                            </span>
+                            <Badge tone={PLANNING_STATUS_TONE[record.status]}>
+                              {PLANNING_STATUS_LABEL[record.status](record.checkIn)}
+                            </Badge>
                           </td>
                         </tr>
                       ))}

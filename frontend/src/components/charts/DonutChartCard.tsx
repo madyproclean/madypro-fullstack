@@ -41,7 +41,20 @@ export const DonutChartCard: React.FC<DonutChartCardProps> = ({
       <div className="chart-card__donut-wrap">
         <ResponsiveContainer width="100%" height={height}>
           <PieChart>
-            <Pie data={data} dataKey="value" nameKey="label" innerRadius="65%" outerRadius="100%" paddingAngle={2}>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="label"
+              innerRadius="65%"
+              outerRadius="100%"
+              paddingAngle={data.length > 1 ? 2 : 0}
+              // recharts ne dessine rien quand un secteur unique couvre
+              // exactement 360° (arc dégénéré, point de départ = point
+              // d'arrivée) — arriver très légèrement en-deçà évite le bug
+              // tout en restant visuellement un cercle plein.
+              startAngle={90}
+              endAngle={data.length === 1 ? 449.99 : 450}
+            >
               {data.map((entry, index) => (
                 <Cell key={entry.label} fill={SERIES_COLORS[index % SERIES_COLORS.length]} stroke="none" />
               ))}

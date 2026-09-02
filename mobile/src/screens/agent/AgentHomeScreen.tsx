@@ -18,8 +18,8 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '@/config/theme';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { ClockCard } from '@/components/ui/ClockCard';
+import { StatRow } from '@/components/ui/StatRow';
 import { HeaderLayout } from '@/components/layout/HeaderLayout';
 import { InterventionCard } from '@/components/cards/InterventionCard';
 import { Intervention } from '@/types/intervention';
@@ -253,28 +253,39 @@ export default function AgentHomeScreen() {
         {isLoading ? (
           <ActivityIndicator color={theme.colors.primary} />
         ) : priority.kind === 'in-progress' ? (
-          <Card style={styles.heroCard}>
-            <Text style={styles.heroLabel}>Mission en cours</Text>
-            <Text style={styles.heroSite}>{priority.intervention.siteName}</Text>
-            <Text style={styles.heroTime}>
-              {priority.intervention.startTime} – {priority.intervention.endTime}
-              {priority.since ? ` · débutée à ${formatTime(new Date(priority.since))}` : ''}
-            </Text>
-            <Button title="Voir l'intervention" onPress={() => goToIntervention(priority.intervention)} />
-          </Card>
+          <ClockCard
+            state="in-progress"
+            statusLabel="Mission en cours"
+            siteName={priority.intervention.siteName}
+            timeRange={`${priority.intervention.startTime} – ${priority.intervention.endTime}${
+              priority.since ? ` · débutée à ${formatTime(new Date(priority.since))}` : ''
+            }`}
+            onPress={() => goToIntervention(priority.intervention)}
+          />
         ) : priority.kind === 'upcoming' ? (
-          <Card style={styles.heroCard}>
-            <Text style={styles.heroLabel}>Prochaine mission · {formatCountdown(priority.startsAt, now)}</Text>
-            <Text style={styles.heroSite}>{priority.intervention.siteName}</Text>
-            <Text style={styles.heroTime}>
-              {priority.intervention.startTime} – {priority.intervention.endTime}
-            </Text>
-            <Button title="Voir l'intervention" onPress={() => goToIntervention(priority.intervention)} />
-          </Card>
+          <ClockCard
+            state="upcoming"
+            statusLabel={`Prochaine mission · ${formatCountdown(priority.startsAt, now)}`}
+            siteName={priority.intervention.siteName}
+            timeRange={`${priority.intervention.startTime} – ${priority.intervention.endTime}`}
+            onPress={() => goToIntervention(priority.intervention)}
+          />
         ) : (
-          <Card style={styles.heroCardEmpty}>
-            <Text style={styles.heroEmptyText}>Rien de prévu pour l'instant. Profitez-en !</Text>
-          </Card>
+          <ClockCard state="empty" />
+        )}
+
+        {!isLoading && (
+          <StatRow
+            items={[
+              { label: 'Aujourd’hui', value: interventions.today.length },
+              {
+                label: 'Terminées',
+                value: interventions.today.filter((i) => i.agents?.find((a) => a.id === user?.id)?.checkOutTime)
+                  .length,
+              },
+              { label: 'Cette semaine', value: interventions.week.length },
+            ]}
+          />
         )}
 
         <View style={styles.block}>
@@ -377,35 +388,6 @@ const styles = StyleSheet.create({
     color: theme.colors.status.late,
     fontSize: 12,
     fontFamily: theme.fonts.bodySemiBold,
-  },
-  heroCard: {
-    backgroundColor: theme.colors.ink,
-    gap: theme.spacing.xs,
-  },
-  heroCardEmpty: {
-    backgroundColor: theme.colors.primarySoft,
-  },
-  heroLabel: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    color: theme.colors.sage,
-    fontFamily: theme.fonts.bodySemiBold,
-  },
-  heroSite: {
-    fontSize: 22,
-    fontFamily: theme.fonts.display,
-    color: '#fff',
-    marginTop: 2,
-  },
-  heroTime: {
-    color: theme.colors.sage,
-    marginBottom: theme.spacing.md,
-  },
-  heroEmptyText: {
-    color: theme.colors.primary,
-    fontFamily: theme.fonts.bodySemiBold,
-    textAlign: 'center',
   },
   block: {
     gap: theme.spacing.md,
