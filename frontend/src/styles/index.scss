@@ -73,39 +73,90 @@ a {
   padding: 1.5rem;
 }
 
+// Carte KPI à badge icône coloré (composants/ui/StatCard.tsx) — style GXON :
+// badge circulaire, gros nombre, libellé, tendance optionnelle.
 .stat-card {
-  display: grid;
-  align-content: start;
-  gap: 0.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
   border: 1px solid var(--color-border);
-  background: linear-gradient(120deg, #fff, #f7f4ec);
+  background: var(--color-shell);
   box-shadow: var(--shadow-soft);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  position: relative;
 }
 
-.stat-card__header {
+.stat-card__badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-pill);
+}
+
+.stat-card__badge--orange {
+  background: var(--color-badge-orange-bg);
+  color: var(--color-badge-orange);
+}
+
+.stat-card__badge--blue {
+  background: var(--color-badge-blue-bg);
+  color: var(--color-badge-blue);
+}
+
+.stat-card__badge--yellow {
+  background: var(--color-badge-yellow-bg);
+  color: var(--color-badge-yellow);
+}
+
+.stat-card__badge--green {
+  background: var(--color-badge-green-bg);
+  color: var(--color-badge-green);
+}
+
+.stat-card__badge--red {
+  background: var(--color-badge-red-bg);
+  color: var(--color-badge-red);
+}
+
+.stat-card__body {
   display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.stat-card__value {
+  font-size: clamp(1.5rem, 2.4vw, 1.9rem);
+  font-weight: 700;
+  color: var(--color-ink);
+  line-height: 1.1;
+}
+
+.stat-card__label {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.stat-card__trend {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
-.stat-card__value-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+.stat-card__trend--up {
+  color: var(--color-success);
 }
 
-.stat-card--primary {
-  border-color: #cfe3d9;
-  background: linear-gradient(120deg, #f5fbf7, #fdfbf5);
-}
-
-.stat-card--warning {
-  border-color: #ffe8cc;
-  background: linear-gradient(120deg, #fff8ef, #fffdf8);
-}
-
-.stat-card--muted {
-  border-color: #e7e3db;
+.stat-card__trend--down {
+  color: var(--color-danger);
 }
 
 .stat-chip {

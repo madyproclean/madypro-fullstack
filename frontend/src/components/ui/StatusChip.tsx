@@ -1,6 +1,7 @@
 import React from 'react';
 import { Clock, Loader2, CheckCircle2, AlertTriangle, XCircle, Ban } from 'lucide-react';
 import { InterventionStatus } from '../../types/intervention';
+import { Badge, BadgeTone } from './Badge';
 
 const LABELS: Record<InterventionStatus, string> = {
   PLANNED: 'Planifiée',
@@ -20,14 +21,16 @@ const ICONS = {
   NO_SHOW: Ban,
 } as const;
 
-export const interventionStatusLabel = (status: InterventionStatus) => LABELS[status] ?? status;
+const TONES: Record<InterventionStatus, BadgeTone> = {
+  PLANNED: 'info',
+  IN_PROGRESS: 'warning',
+  COMPLETED: 'success',
+  NEEDS_REVIEW: 'warning',
+  CANCELLED: 'danger',
+  NO_SHOW: 'danger',
+};
 
-const toneClass = (status: InterventionStatus) =>
-  status === 'PLANNED'
-    ? 'status-chip--info'
-    : status === 'COMPLETED'
-    ? 'status-chip--success'
-    : 'status-chip--warning';
+export const interventionStatusLabel = (status: InterventionStatus) => LABELS[status] ?? status;
 
 type StatusChipProps = {
   status: InterventionStatus;
@@ -35,13 +38,18 @@ type StatusChipProps = {
   pulse?: boolean;
 };
 
+/** Thin wrapper around Badge — mappe le statut d'intervention à un ton + icône. */
 export const StatusChip: React.FC<StatusChipProps> = ({ status, pulse }) => {
   const Icon = ICONS[status];
   const spinning = status === 'IN_PROGRESS';
   return (
-    <span className={`status-chip ${toneClass(status)}${pulse && status === 'IN_PROGRESS' ? ' status-pulse' : ''}`}>
-      <Icon size={13} className={spinning ? 'status-chip__icon status-chip__icon--spin' : 'status-chip__icon'} aria-hidden="true" />
+    <Badge
+      tone={TONES[status]}
+      icon={spinning ? undefined : Icon}
+      pulse={pulse && status === 'IN_PROGRESS'}
+    >
+      {spinning && <Icon size={13} className="badge__icon badge__icon--spin" aria-hidden="true" />}
       {LABELS[status] ?? status}
-    </span>
+    </Badge>
   );
 };

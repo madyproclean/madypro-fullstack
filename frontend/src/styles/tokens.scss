@@ -32,6 +32,29 @@
   --color-danger: #c2410c;
   --color-danger-bg: #fdece3;
 
+  // Tons de badge KPI — décoratifs/catégoriels (assignés par type de carte stat,
+  // ex. StatCard), distincts des tokens sémantiques ci-dessus qui restent liés
+  // à un sens précis (succès/alerte/info/danger). Alias vers l'existant quand
+  // la teinte coïncide, pour garder une seule source de vérité par couleur.
+  --color-badge-orange: #c2610c;
+  --color-badge-orange-bg: #fdecda;
+  --color-badge-blue: var(--color-accent);
+  --color-badge-blue-bg: var(--color-mist);
+  --color-badge-yellow: #9c7a18;
+  --color-badge-yellow-bg: #fff8df;
+  --color-badge-green: var(--color-success);
+  --color-badge-green-bg: var(--color-success-bg);
+  --color-badge-red: var(--color-danger);
+  --color-badge-red-bg: var(--color-danger-bg);
+
+  // Séries de graphiques (recharts) — reprend les 5 teintes de badge pour que
+  // légendes de graphiques et cartes KPI restent visuellement cohérentes.
+  --chart-series-1: var(--color-badge-blue);
+  --chart-series-2: var(--color-badge-orange);
+  --chart-series-3: var(--color-badge-green);
+  --chart-series-4: var(--color-badge-yellow);
+  --chart-series-5: var(--color-badge-red);
+
   // Ombres
   --shadow-soft: 0 25px 45px rgba(2, 9, 18, 0.08);
   --shadow-pop: 0 12px 24px rgba(2, 9, 18, 0.14);

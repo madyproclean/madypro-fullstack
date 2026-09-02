@@ -368,6 +368,54 @@ p {
   color: #9c1f1f;
 }
 
+// Badge — version générique de .status-chip (tons pilotés par les tokens,
+// pas de couleurs littérales), utilisée par le nouveau composant Badge.tsx.
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.75rem;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge__icon {
+  flex-shrink: 0;
+}
+
+.badge__icon--spin {
+  animation: ui-spin 0.9s linear infinite;
+}
+
+.badge--success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.badge--warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge--info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.badge--danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.badge--neutral {
+  background: var(--color-mist);
+  color: var(--color-muted);
+}
+
 .page-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(260px, 420px);

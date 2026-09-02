@@ -21,6 +21,21 @@ export const theme = {
       pending: '#7B8781',
       pendingSoft: '#E4E9E6',
     },
+    // Tons de badge KPI — décoratifs/catégoriels, en miroir de
+    // frontend/src/styles/tokens.scss (--color-badge-*) pour garder les deux
+    // plateformes visuellement cohérentes.
+    badge: {
+      orange: '#C2610C',
+      orangeSoft: '#FDECDA',
+      blue: '#0f98eb',
+      blueSoft: '#E3F4FC',
+      yellow: '#9C7A18',
+      yellowSoft: '#FFF8DF',
+      green: '#2E8B57',
+      greenSoft: '#E1F1E7',
+      red: '#C24A3E',
+      redSoft: '#F3DEDE',
+    },
   },
   fonts: {
     display: 'FjallaOne_400Regular',
