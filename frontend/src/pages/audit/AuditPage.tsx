@@ -6,6 +6,7 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { formatDateTime } from '../../utils/datetime';
 import { Download } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const ACTION_OPTIONS: { value: AuditAction | 'all'; label: string }[] = [
   { value: 'all', label: 'Toutes les actions' },
@@ -96,14 +97,15 @@ export const AuditPage: React.FC = () => {
 
   return (
     <div className="audit-page">
-      <div className="page-header">
-        <span className="pill">Audit</span>
-        <h2>Historique des actions sensibles</h2>
-        <p>Suivez qui a modifié quoi dans l’écosystème Madypro Clean.</p>
-        <Button type="button" variant="ghost" icon={Download} onClick={handleExportCsv} disabled={exporting}>
-          {exporting ? 'Export...' : 'Export RGPD (CSV)'}
-        </Button>
-      </div>
+      <PageHeader
+        title="Historique des actions sensibles"
+        subtitle="Suivez qui a modifié quoi dans l’écosystème Madypro Clean."
+        actions={
+          <Button type="button" variant="ghost" icon={Download} onClick={handleExportCsv} disabled={exporting}>
+            {exporting ? 'Export...' : 'Export RGPD (CSV)'}
+          </Button>
+        }
+      />
 
       <div className="filter-grid" role="search">
         <Input

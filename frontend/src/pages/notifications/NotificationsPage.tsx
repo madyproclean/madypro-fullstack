@@ -23,6 +23,7 @@ import { Textarea } from '../../components/ui/Textarea';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
 import { formatDateTime } from '../../utils/datetime';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const audienceOptions: { value: NotificationAudience; label: string }[] = [
   { value: 'ALL_AGENTS', label: 'Tous les agents' },
@@ -211,11 +212,10 @@ export const NotificationsPage: React.FC = () => {
 
   return (
     <div className="notifications-page">
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Notifications</span>
-          <h2>Informez vos équipes en temps réel</h2>
-          <p>Consultez l’historique et envoyez des push ciblés aux agents et superviseurs.</p>
+      <PageHeader
+        title="Informez vos équipes en temps réel"
+        subtitle="Consultez l’historique et envoyez des push ciblés aux agents et superviseurs."
+        actions={
           <Button
             type="button"
             icon={Send}
@@ -226,10 +226,10 @@ export const NotificationsPage: React.FC = () => {
           >
             Envoyer une notification
           </Button>
-        </div>
-      </div>
+        }
+      />
 
-      <Modal open={formVisible} onClose={() => setFormVisible(false)} maxWidth={900} labelledBy="notification-form-title">
+      <Modal open={formVisible} onClose={() => setFormVisible(false)} maxWidth={560} labelledBy="notification-form-title">
         <ModalHeader
           eyebrow="Push"
           title="Envoyer une notification"

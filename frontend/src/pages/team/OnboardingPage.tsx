@@ -16,6 +16,7 @@ import { Select } from '../../components/ui/Select';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { Trash2, Plus, Play } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const OnboardingPage: React.FC = () => {
   const { token, notify } = useAuthContext();
@@ -85,11 +86,7 @@ export const OnboardingPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>Onboarding</h2>
-        <p>Modèle d’étapes pour les nouveaux agents et suivi individuel.</p>
-      </div>
+      <PageHeader title="Onboarding" subtitle="Modèle d’étapes pour les nouveaux agents et suivi individuel." />
 
       <div className="settings-grid">
         <article className="settings-card">

@@ -5,8 +5,10 @@ export type AbsenceFilters = {
   status?: AbsenceStatus | 'all';
   type?: AbsenceType | 'all';
   agentId?: string;
+  siteId?: string;
   startDate?: string;
   endDate?: string;
+  manual?: boolean;
   page?: number;
   pageSize?: number;
 };
@@ -40,8 +42,10 @@ export async function listAbsences(token: string, filters: AbsenceFilters = {}) 
   if (filters.status && filters.status !== 'all') params.set('status', filters.status);
   if (filters.type && filters.type !== 'all') params.set('type', filters.type);
   if (filters.agentId && filters.agentId !== 'all') params.set('agentId', filters.agentId);
+  if (filters.siteId) params.set('siteId', filters.siteId);
   if (filters.startDate) params.set('startDate', filters.startDate);
   if (filters.endDate) params.set('endDate', filters.endDate);
+  if (filters.manual) params.set('manual', 'true');
   if (filters.page) params.set('page', String(filters.page));
   if (filters.pageSize) params.set('pageSize', String(filters.pageSize));
   const query = params.toString();

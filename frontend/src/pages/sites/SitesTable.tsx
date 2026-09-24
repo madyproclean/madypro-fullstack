@@ -3,8 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { deleteSite, listSites } from '../../services/api/sites.api';
 import { Site } from '../../types/site';
 import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Pagination } from '../../components/ui/Pagination';
 import { useAuthContext } from '../../context/AuthContext';
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 
 type SitesTableProps = {
   /** Notifie le parent à chaque chargement — utile pour des stats agrégées (ex. portefeuille). */
@@ -76,24 +78,8 @@ export const SitesTable: React.FC<SitesTableProps> = ({ onLoaded }) => {
   return (
     <div>
       {error && <p className="form-error">{error}</p>}
-      <div className="pagination">
-        <Button type="button" variant="ghost" icon={ChevronLeft} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-          Précédent
-        </Button>
-        <span className="card__meta">Page {page}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          icon={ChevronRight}
-          iconPosition="right"
-          onClick={() => {
-            const maxPage = Math.ceil(total / pageSize) || 1;
-            setPage((p) => (p < maxPage ? p + 1 : p));
-          }}
-          disabled={page * pageSize >= total}
-        >
-          Suivant
-        </Button>
+      <div className="pagination-bar">
+        <Pagination page={page} pageCount={Math.ceil(total / pageSize) || 1} onChange={setPage} />
         <span className="card__meta">{total} résultats</span>
       </div>
       {loading ? (
@@ -113,9 +99,7 @@ export const SitesTable: React.FC<SitesTableProps> = ({ onLoaded }) => {
                   <div>{site.name}</div>
                   <div>{site.address}</div>
                   <div>
-                    <span className={`tag ${site.active ? 'tag--success' : 'tag--muted'}`}>
-                      {site.active ? 'Actif' : 'Inactif'}
-                    </span>
+                    <Badge tone={site.active ? 'success' : 'neutral'}>{site.active ? 'Actif' : 'Inactif'}</Badge>
                   </div>
                   <div className="table-actions">
                     <Link to={`/supervision/sites/${site.id}`} className="btn btn--ghost btn--compact">

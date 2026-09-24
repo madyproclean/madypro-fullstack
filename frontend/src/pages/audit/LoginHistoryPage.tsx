@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { listLoginHistory, LoginHistoryPage as LoginHistoryPageType } from '../../services/api/auth.api';
 import { formatDateTime } from '../../utils/datetime';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const LoginHistoryPage: React.FC = () => {
   const { token, notify } = useAuthContext();
@@ -24,11 +25,10 @@ export const LoginHistoryPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Audit</span>
-        <h2>Journal des connexions</h2>
-        <p>Qui s’est connecté, quand, et depuis où — distinct du journal d’audit métier.</p>
-      </div>
+      <PageHeader
+        title="Journal des connexions"
+        subtitle="Qui s’est connecté, quand, et depuis où — distinct du journal d’audit métier."
+      />
 
       <section className="panel">
         {loading ? (

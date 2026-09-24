@@ -17,6 +17,7 @@ import { Button } from '../../components/ui/Button';
 import { formatDateTime } from '../../utils/datetime';
 import { env } from '../../config/env';
 import { Check, Plus, Power, Link as LinkIcon } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const ApiKeysPage: React.FC = () => {
   const { token, notify } = useAuthContext();
@@ -115,14 +116,15 @@ export const ApiKeysPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Paramètres</span>
-        <h2>Clés API & portail client</h2>
-        <p>Gérez les accès programmatiques et les liens de suivi partagés avec vos clients.</p>
-        <a href={`${env.apiUrl.replace(/\/$/, '')}/api/docs`} target="_blank" rel="noreferrer" className="btn btn--ghost">
-          Documentation API (Swagger)
-        </a>
-      </div>
+      <PageHeader
+        title="Clés API & portail client"
+        subtitle="Gérez les accès programmatiques et les liens de suivi partagés avec vos clients."
+        actions={
+          <a href={`${env.apiUrl.replace(/\/$/, '')}/api/docs`} target="_blank" rel="noreferrer" className="btn btn--ghost">
+            Documentation API (Swagger)
+          </a>
+        }
+      />
 
       {revealedKey && (
         <div className="settings-card" style={{ marginBottom: '1rem', borderColor: '#16a34a' }}>

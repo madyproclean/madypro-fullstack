@@ -26,9 +26,10 @@ export type SitesPage = { items: Site[]; total: number; page: number; pageSize: 
 
 export async function listSites(
   token: string,
-  params?: { page?: number; pageSize?: number },
+  params?: { active?: boolean; page?: number; pageSize?: number },
 ): Promise<SitesPage> {
   const search = new URLSearchParams();
+  if (params?.active !== undefined) search.set('active', String(params.active));
   if (params?.page) search.set('page', String(params.page));
   if (params?.pageSize) search.set('pageSize', String(params.pageSize));
   const path = search.toString() ? `sites?${search.toString()}` : 'sites';

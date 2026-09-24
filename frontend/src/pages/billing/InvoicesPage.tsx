@@ -17,6 +17,10 @@ import { Button } from '../../components/ui/Button';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '../../components/ui/Modal';
 import { formatDateTime } from '../../utils/datetime';
 import { openPdfInNewTab } from '../../utils/downloadPdf';
+import { Badge } from '../../components/ui/Badge';
+import { StatCard } from '../../components/ui/StatCard';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Wallet, Clock3, AlertTriangle, TrendingUp } from 'lucide-react';
 
 const STATUS_OPTIONS: { value: InvoiceStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Tous statuts' },
@@ -158,32 +162,19 @@ export const InvoicesPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Devis & facturation</span>
-        <h2>Factures clients</h2>
-        <p>Suivez vos factures, relances et encaissements.</p>
-      </div>
+      <PageHeader title="Factures clients" subtitle="Suivez vos factures, relances et encaissements." />
 
       {kpis && (
         <div className="page-grid" style={{ marginBottom: '1.5rem' }}>
-          <article className="card">
-            <span className="card__meta">CA facturé (mois)</span>
-            <p className="card__value">{kpis.revenueThisMonth.toFixed(2)} €</p>
-          </article>
-          <article className="card">
-            <span className="card__meta">En attente</span>
-            <p className="card__value">{kpis.pendingAmount.toFixed(2)} €</p>
-          </article>
-          <article className="card" style={kpis.overdueAmount > 0 ? { borderColor: '#dc2626' } : undefined}>
-            <span className="card__meta">En retard</span>
-            <p className="card__value" style={kpis.overdueAmount > 0 ? { color: '#dc2626' } : undefined}>
-              {kpis.overdueAmount.toFixed(2)} €
-            </p>
-          </article>
-          <article className="card">
-            <span className="card__meta">Taux de conversion devis</span>
-            <p className="card__value">{kpis.conversionRate === null ? '—' : `${kpis.conversionRate}%`}</p>
-          </article>
+          <StatCard icon={Wallet} badgeTone="blue" value={`${kpis.revenueThisMonth.toFixed(2)} €`} label="CA facturé (mois)" />
+          <StatCard icon={Clock3} badgeTone="yellow" value={`${kpis.pendingAmount.toFixed(2)} €`} label="En attente" />
+          <StatCard icon={AlertTriangle} badgeTone="red" value={`${kpis.overdueAmount.toFixed(2)} €`} label="En retard" />
+          <StatCard
+            icon={TrendingUp}
+            badgeTone="green"
+            value={kpis.conversionRate === null ? '—' : `${kpis.conversionRate}%`}
+            label="Taux de conversion devis"
+          />
         </div>
       )}
 
@@ -247,19 +238,19 @@ export const InvoicesPage: React.FC = () => {
                     <td>{invoice.totalTTC.toFixed(2)} €</td>
                     <td>{invoice.amountPaidHT.toFixed(2)} €</td>
                     <td>
-                      <span
-                        className={`status-chip ${
+                      <Badge
+                        tone={
                           invoice.status === 'PAID'
-                            ? 'status-chip--success'
+                            ? 'success'
                             : invoice.isOverdue
-                            ? 'status-chip--danger'
+                            ? 'danger'
                             : invoice.status === 'CANCELLED'
-                            ? 'status-chip--info'
-                            : 'status-chip--warning'
-                        }`}
+                            ? 'info'
+                            : 'warning'
+                        }
                       >
                         {invoice.isOverdue ? 'En retard' : STATUS_LABELS[invoice.status]}
-                      </span>
+                      </Badge>
                     </td>
                     <td>{invoice.dueAt ? invoice.dueAt.slice(0, 10) : '—'}</td>
                     <td>{formatDateTime(invoice.issuedAt)}</td>

@@ -6,6 +6,7 @@ import { listLowStockInventory } from '../../services/api/inventory.api';
 import { DashboardSummary } from '../../types/dashboard';
 import { InventoryItem } from '../../types/inventory';
 import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { StatCard, StatCardBadgeTone } from '../../components/ui/StatCard';
 import { Badge, BadgeTone } from '../../components/ui/Badge';
@@ -223,66 +224,60 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Tableau de bord Madypro Clean</span>
-          <h2>Vue synthétique</h2>
-          <p>Suivez le plan de charge, la présence terrain et les alertes critiques en temps réel.</p>
-        </div>
-        <div className="page-hero__accent">
-          <h3>Filtres</h3>
-          <div className="filter-grid" role="search">
-            <label className="filter-field filter-card filter-card--wide">
-              Recherche
-              <input
-                type="text"
-                placeholder="Agent, site..."
-                value={filters.search}
-                onChange={(event) => handleFilterChange('search', event.target.value)}
-              />
-            </label>
-            <label className="filter-field filter-card">
-              Date
-              <input
-                type="date"
-                value={filters.date}
-                onChange={(event) => handleFilterChange('date', event.target.value)}
-              />
-            </label>
-            <label className="filter-field filter-card">
-              Site
-              <select
-                value={filters.site}
-                onChange={(event) => handleFilterChange('site', event.target.value)}
-              >
-                {['all', ...summary.filterOptions.sites].map((option) => (
-                  <option key={option} value={option}>
-                    {option === 'all' ? 'Tous' : option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="filter-field filter-card">
-              Superviseur
-              <select
-                value={filters.supervisor}
-                onChange={(event) => handleFilterChange('supervisor', event.target.value)}
-              >
-                {['all', ...summary.filterOptions.supervisors].map((option) => (
-                  <option key={option} value={option}>
-                    {option === 'all' ? 'Tous' : option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Vue synthétique"
+        subtitle="Suivez le plan de charge, la présence terrain et les alertes critiques en temps réel."
+        actions={
+          <Button type="button" variant="ghost" icon={Settings} onClick={() => setEditMode((v) => !v)}>
+            {editMode ? 'Terminer la configuration' : 'Configurer le tableau de bord'}
+          </Button>
+        }
+      />
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.5rem 0' }}>
-        <Button type="button" variant="ghost" icon={Settings} onClick={() => setEditMode((v) => !v)}>
-          {editMode ? 'Terminer la configuration' : 'Configurer le tableau de bord'}
-        </Button>
+      <div className="filter-grid" role="search">
+        <label className="filter-field filter-card filter-card--wide">
+          Recherche
+          <input
+            type="text"
+            placeholder="Agent, site..."
+            value={filters.search}
+            onChange={(event) => handleFilterChange('search', event.target.value)}
+          />
+        </label>
+        <label className="filter-field filter-card">
+          Date
+          <input
+            type="date"
+            value={filters.date}
+            onChange={(event) => handleFilterChange('date', event.target.value)}
+          />
+        </label>
+        <label className="filter-field filter-card">
+          Site
+          <select
+            value={filters.site}
+            onChange={(event) => handleFilterChange('site', event.target.value)}
+          >
+            {['all', ...summary.filterOptions.sites].map((option) => (
+              <option key={option} value={option}>
+                {option === 'all' ? 'Tous' : option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="filter-field filter-card">
+          Superviseur
+          <select
+            value={filters.supervisor}
+            onChange={(event) => handleFilterChange('supervisor', event.target.value)}
+          >
+            {['all', ...summary.filterOptions.supervisors].map((option) => (
+              <option key={option} value={option}>
+                {option === 'all' ? 'Tous' : option}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {error && <p className="form-error">{error}</p>}

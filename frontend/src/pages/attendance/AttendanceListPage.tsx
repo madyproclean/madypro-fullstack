@@ -17,8 +17,11 @@ import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
 import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
 import { PromptModal } from '../../components/ui/PromptModal';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Badge, BadgeTone } from '../../components/ui/Badge';
+import { Pagination } from '../../components/ui/Pagination';
 import { useAuthContext } from '../../context/AuthContext';
-import { Plus, ArrowLeft, ArrowRight, RotateCcw, Check, X, Eye, Pencil } from 'lucide-react';
+import { Plus, RotateCcw, Check, X, Eye, Pencil, AlertTriangle } from 'lucide-react';
 import { listUsers } from '../../services/api/users.api';
 import { listSites } from '../../services/api/sites.api';
 import { listInterventions } from '../../services/api/interventions.api';
@@ -312,13 +315,15 @@ export const AttendanceListPage: React.FC = () => {
   const durationLabel = (duration?: number) =>
     typeof duration === 'number' ? `${Math.floor(duration / 60)}h${(duration % 60).toString().padStart(2, '0')}` : '—';
 
+  const statusTone = (status: AttendanceStatus): BadgeTone =>
+    status === 'COMPLETED' ? 'success' : status === 'PENDING' ? 'warning' : 'info';
+
   return (
     <div className="attendance-page">
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Suivi des pointages</span>
-          <h2>Contrôlez les présences terrain</h2>
-          <p>Visualisez, corrigez ou créez les pointages agents / superviseurs pour sécuriser la paie.</p>
+      <PageHeader
+        title="Contrôlez les présences terrain"
+        subtitle="Visualisez, corrigez ou créez les pointages agents / superviseurs pour sécuriser la paie."
+        actions={
           <Button
             type="button"
             icon={Plus}
@@ -329,36 +334,50 @@ export const AttendanceListPage: React.FC = () => {
           >
             Créer un pointage manuel
           </Button>
-        </div>
-        <div className="page-hero__accent">
-          <h3>À surveiller</h3>
-          <ul className="list-line">
-            {(() => {
-              const alerts = records
-                .filter((r) => r.status === 'PENDING' || r.status === 'CANCELLED' || r.manual)
-                .sort((a, b) => (b.checkInTime || '').localeCompare(a.checkInTime || ''))
+        }
+      />
+
+      <section className="panel" style={{ marginTop: 0, marginBottom: '1.5rem' }}>
+        <h3>À surveiller</h3>
+        <ul className="list-line">
+          {(() => {
+              const alerts = [...anomalies]
+                .sort((a, b) => {
+                  if (a.type === 'SUSPICIOUS_DURATION' && b.type === 'SUSPICIOUS_DURATION') {
+                    return b.date.localeCompare(a.date);
+                  }
+                  if (a.type === 'SUSPICIOUS_DURATION') return -1;
+                  if (b.type === 'SUSPICIOUS_DURATION') return 1;
+                  return b.occurrences - a.occurrences;
+                })
                 .slice(0, 5);
               if (!alerts.length) {
                 return <li>Aucune alerte.</li>;
               }
-              return alerts.map((att) => {
-                const flag =
-                  att.status === 'CANCELLED'
-                    ? 'Annulé'
-                    : att.manual
-                    ? 'Manuel'
-                    : 'En cours';
-                const time = att.checkInTime ?? att.plannedStart ?? '—';
-                return (
-                  <li key={att.id}>
-                    {att.agent.name} · {att.site.name} <span>{flag} · {time}</span>
+              return alerts.map((anomaly, index) =>
+                anomaly.type === 'SUSPICIOUS_DURATION' ? (
+                  <li key={`duration-${anomaly.attendanceId}`}>
+                    <Badge tone="warning" icon={AlertTriangle}>
+                      Durée suspecte
+                    </Badge>
+                    <span>
+                      {anomaly.agentName} · {anomaly.siteName} · {anomaly.durationMinutes} min
+                    </span>
                   </li>
-                );
-              });
+                ) : (
+                  <li key={`zone-${anomaly.userId}-${index}`}>
+                    <Badge tone="warning" icon={AlertTriangle}>
+                      Hors zone répété
+                    </Badge>
+                    <span>
+                      {anomaly.agentName} · {anomaly.occurrences}×
+                    </span>
+                  </li>
+                ),
+              );
             })()}
           </ul>
-        </div>
-      </div>
+      </section>
 
       <div className="filter-grid" role="search">
         <label className="filter-field filter-card">
@@ -399,29 +418,13 @@ export const AttendanceListPage: React.FC = () => {
             ))}
           </select>
         </label>
-        <div className="pagination">
-          <Button type="button" variant="ghost" icon={ArrowLeft} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-            Précédent
-          </Button>
-          <span className="card__meta">Page {page}</span>
-          <Button
-            type="button"
-            variant="ghost"
-            icon={ArrowRight}
-            iconPosition="right"
-            onClick={() => {
-              const maxPage = Math.ceil(total / pageSize) || 1;
-              setPage((p) => (p < maxPage ? p + 1 : p));
-            }}
-            disabled={page * pageSize >= total}
-          >
-            Suivant
-          </Button>
+        <div className="pagination-bar">
+          <Pagination page={page} pageCount={Math.ceil(total / pageSize) || 1} onChange={setPage} />
           <span className="card__meta">{total} résultats</span>
         </div>
       </div>
 
-      <Modal open={manualOpen} onClose={() => setManualOpen(false)} maxWidth={900} labelledBy="manual-attendance-title">
+      <Modal open={manualOpen} onClose={() => setManualOpen(false)} maxWidth={560} labelledBy="manual-attendance-title">
         <ModalHeader
           eyebrow="Pointage"
           title="Pointage manuel"
@@ -544,17 +547,9 @@ export const AttendanceListPage: React.FC = () => {
                   <td>{entry.checkOutTime ?? '—'}</td>
                   <td>{durationLabel(entry.durationMinutes)}</td>
                   <td>
-                    <span
-                      className={`status-chip ${
-                        entry.status === 'COMPLETED'
-                          ? 'status-chip--success'
-                          : entry.status === 'PENDING'
-                          ? 'status-chip--warning'
-                          : 'status-chip--info'
-                      }`}
-                    >
+                    <Badge tone={statusTone(entry.status)}>
                       {{ PENDING: 'En attente', COMPLETED: 'Terminé', CANCELLED: 'Annulé' }[entry.status] ?? entry.status}
-                    </span>
+                    </Badge>
                   </td>
                   <td>
                     <div className="table-actions">
@@ -598,7 +593,7 @@ export const AttendanceListPage: React.FC = () => {
                   anomaly.type === 'SUSPICIOUS_DURATION' ? (
                     <tr key={`duration-${anomaly.attendanceId}`}>
                       <td>
-                        <span className="status-chip status-chip--warning">Durée suspecte</span>
+                        <Badge tone="warning">Durée suspecte</Badge>
                       </td>
                       <td>{anomaly.agentName}</td>
                       <td>
@@ -609,7 +604,7 @@ export const AttendanceListPage: React.FC = () => {
                   ) : (
                     <tr key={`zone-${anomaly.userId}-${index}`}>
                       <td>
-                        <span className="status-chip status-chip--warning">Hors zone répété</span>
+                        <Badge tone="warning">Hors zone répété</Badge>
                       </td>
                       <td>{anomaly.agentName}</td>
                       <td>{anomaly.occurrences} occurrences sur 30 jours</td>
@@ -646,24 +641,8 @@ export const AttendanceListPage: React.FC = () => {
         </section>
       )}
 
-      <div className="pagination" style={{ marginTop: '1rem' }}>
-        <Button type="button" variant="ghost" icon={ArrowLeft} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-          Précédent
-        </Button>
-        <span className="card__meta">Page {page}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          icon={ArrowRight}
-          iconPosition="right"
-          onClick={() => {
-            const maxPage = Math.ceil(total / pageSize) || 1;
-            setPage((p) => (p < maxPage ? p + 1 : p));
-          }}
-          disabled={page * pageSize >= total}
-        >
-          Suivant
-        </Button>
+      <div className="pagination-bar">
+        <Pagination page={page} pageCount={Math.ceil(total / pageSize) || 1} onChange={setPage} />
         <span className="card__meta">{total} résultats</span>
       </div>
 

@@ -40,7 +40,6 @@ export const ResetPasswordPage: React.FC = () => {
   return (
     <div className="auth-page">
       <div className="auth-page__intro">
-        <span className="pill">Support Madypro Clean</span>
         <h1>Choisir un nouveau mot de passe</h1>
         <p>Définissez un nouveau mot de passe pour votre compte Madypro Clean.</p>
       </div>

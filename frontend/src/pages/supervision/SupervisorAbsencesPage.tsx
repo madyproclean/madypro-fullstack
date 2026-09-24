@@ -9,6 +9,8 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Check, X } from 'lucide-react';
 import { formatDateTime } from '../../utils/datetime';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const TYPE_LABELS: Record<Absence['type'], string> = {
   SICK: 'Arrêt maladie',
@@ -70,11 +72,7 @@ export const SupervisorAbsencesPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Supervision</span>
-        <h2>Absences des agents</h2>
-        <p>Validation, refus et historique des absences filtrées par site.</p>
-      </div>
+      <PageHeader title="Absences des agents" subtitle="Validation, refus et historique des absences filtrées par site." />
 
       <div className="filter-grid" style={{ marginBottom: '1rem' }}>
         <label className="filter-field filter-card">
@@ -139,21 +137,21 @@ export const SupervisorAbsencesPage: React.FC = () => {
                     <td>{TYPE_LABELS[abs.type] ?? abs.type}</td>
                     <td>{abs.reason}</td>
                     <td>
-                      <span
-                        className={`status-chip ${
+                      <Badge
+                        tone={
                           abs.status === 'APPROVED'
-                            ? 'status-chip--success'
+                            ? 'success'
                             : abs.status === 'PENDING'
-                            ? 'status-chip--info'
-                            : 'status-chip--warning'
-                        }`}
+                            ? 'info'
+                            : 'warning'
+                        }
                       >
                         {abs.status === 'APPROVED'
                           ? 'Validée'
                           : abs.status === 'REJECTED'
                           ? 'Refusée'
                           : 'En attente'}
-                      </span>
+                      </Badge>
                     </td>
                     <td>
                       {abs.status === 'PENDING' ? (

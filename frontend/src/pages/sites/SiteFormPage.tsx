@@ -55,6 +55,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const DAY_LABELS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
@@ -745,14 +746,15 @@ export const SiteFormPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Sites</span>
-        <h2>{isEdit ? 'Modifier un site' : 'Nouveau site'}</h2>
-        <p>Ajustez les informations, superviseurs et moyens logistiques d’un site.</p>
-        <Button type="button" icon={isEdit ? Pencil : Plus} onClick={openCreateForm}>
-          {isEdit ? 'Modifier' : 'Créer un site'}
-        </Button>
-      </div>
+      <PageHeader
+        title={isEdit ? 'Modifier un site' : 'Nouveau site'}
+        subtitle="Ajustez les informations, superviseurs et moyens logistiques d’un site."
+        actions={
+          <Button type="button" icon={isEdit ? Pencil : Plus} onClick={openCreateForm}>
+            {isEdit ? 'Modifier' : 'Créer un site'}
+          </Button>
+        }
+      />
       {error && <p className="form-error">{error}</p>}
       <SitesTable />
       {loading ? (
@@ -789,7 +791,7 @@ export const SiteFormPage: React.FC = () => {
           />
           <ModalBody>
             <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
-            <form className="form-card" onSubmit={handleSubmit} style={{ boxShadow: 'none', padding: 0 }}>
+            <form className="form-card form-card--wide" onSubmit={handleSubmit} style={{ boxShadow: 'none', padding: 0 }}>
               <TabPanel active={activeTab === 'general'}>
                 <Input
                   id="name"

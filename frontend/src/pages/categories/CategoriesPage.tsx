@@ -6,6 +6,8 @@ import { InterventionCategory } from '../../types/category';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const CategoriesPage: React.FC = () => {
   const { token, notify } = useAuthContext();
@@ -93,15 +95,10 @@ export const CategoriesPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Paramètres</span>
-        <h2>Catégories d'intervention</h2>
-        <p>
-          Le catalogue des types d'intervention (nettoyage vitres, ménage, private, hivernage...). Associez-les
-          ensuite à un site depuis sa fiche pour définir l'horaire et la checklist propres à chaque catégorie sur
-          ce site.
-        </p>
-      </div>
+      <PageHeader
+        title="Catégories d'intervention"
+        subtitle="Le catalogue des types d'intervention (nettoyage vitres, ménage, private, hivernage...). Associez-les ensuite à un site depuis sa fiche pour définir l'horaire et la checklist propres à chaque catégorie sur ce site."
+      />
 
       <div className="panel" style={{ marginBottom: '1rem' }}>
         <form onSubmit={handleCreate} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
@@ -148,9 +145,9 @@ export const CategoriesPage: React.FC = () => {
                       checked={category.active}
                       onChange={() => toggleActive(category)}
                       label={
-                        <span className={`status-chip ${category.active ? 'status-chip--success' : 'status-chip--warning'}`}>
+                        <Badge tone={category.active ? 'success' : 'warning'}>
                           {category.active ? 'Active' : 'Inactive'}
-                        </span>
+                        </Badge>
                       }
                     />
                   </td>

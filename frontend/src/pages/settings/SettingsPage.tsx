@@ -14,6 +14,7 @@ import {
   updateMonthlyQuota,
 } from '../../services/api/settings.api';
 import { Save, Plus } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
@@ -205,11 +206,10 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Paramètres</span>
-        <h2>Règles métier Madypro Clean</h2>
-        <p>Définissez les règles de pointage, listes d’absences et permissions par rôle.</p>
-      </div>
+      <PageHeader
+        title="Règles métier Madypro Clean"
+        subtitle="Définissez les règles de pointage, listes d’absences et permissions par rôle."
+      />
 
       <div className="settings-grid">
         <article className="settings-card" style={{ gridColumn: 'span 2' }}>

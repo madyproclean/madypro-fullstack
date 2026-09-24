@@ -16,6 +16,8 @@ import { Button } from '../../components/ui/Button';
 import { ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import { ChipGroup } from '../../components/ui/ChipGroup';
 import { StatusChip } from '../../components/ui/StatusChip';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { RouteOptimizationPanel } from '../../components/interventions/RouteOptimizationPanel';
 import { useSupervisedSiteIds } from '../../hooks/useSupervisedSiteIds';
 
@@ -193,11 +195,10 @@ export const SupervisorPlanningPage: React.FC<{ embedded?: boolean }> = ({ embed
   return (
     <div className={embedded ? undefined : 'page'}>
       {!embedded && (
-        <div className="page-header">
-          <span className="pill">Supervision</span>
-          <h2>Planning des équipes</h2>
-          <p>Vue hebdomadaire des équipes par site, avec ajustement horaires et remplacements.</p>
-        </div>
+        <PageHeader
+          title="Planning des équipes"
+          subtitle="Vue hebdomadaire des équipes par site, avec ajustement horaires et remplacements."
+        />
       )}
 
       <div className="filter-grid" style={{ marginBottom: '1rem' }}>
@@ -417,9 +418,9 @@ export const SupervisorPlanningPage: React.FC<{ embedded?: boolean }> = ({ embed
                       </td>
                       <td>{entry.siteName}</td>
                       <td>
-                        <span className={`status-chip ${entry.source === 'real' ? 'status-chip--success' : 'status-chip--info'}`}>
+                        <Badge tone={entry.source === 'real' ? 'success' : 'info'}>
                           {entry.source === 'real' ? 'Confirmée' : 'Prévue'}
-                        </span>
+                        </Badge>
                       </td>
                     </tr>
                   ))}

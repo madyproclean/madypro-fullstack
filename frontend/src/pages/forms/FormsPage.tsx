@@ -10,6 +10,7 @@ import { Checkbox } from '../../components/ui/Checkbox';
 import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
 import { RepeatableFieldArray } from '../../components/ui/RepeatableFieldArray';
 import { formatDateTime } from '../../utils/datetime';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const FIELD_TYPE_OPTIONS: { value: FormFieldType; label: string }[] = [
   { value: 'text', label: 'Texte' },
@@ -103,14 +104,15 @@ export const FormsPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Formulaires</span>
-        <h2>Formulaires personnalisables</h2>
-        <p>Construisez des formulaires terrain (checklists, rapports) remplis depuis mobile ou un lien partagé.</p>
-        <Button type="button" icon={Plus} onClick={() => setFormVisible((v) => !v)}>
-          {formVisible ? 'Fermer' : 'Nouveau formulaire'}
-        </Button>
-      </div>
+      <PageHeader
+        title="Formulaires personnalisables"
+        subtitle="Construisez des formulaires terrain (checklists, rapports) remplis depuis mobile ou un lien partagé."
+        actions={
+          <Button type="button" icon={Plus} onClick={() => setFormVisible((v) => !v)}>
+            {formVisible ? 'Fermer' : 'Nouveau formulaire'}
+          </Button>
+        }
+      />
 
       {formVisible && (
         <form className="form-card" onSubmit={handleCreate} style={{ marginBottom: '1.5rem' }}>

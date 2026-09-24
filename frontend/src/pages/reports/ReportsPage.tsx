@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Send } from 'lucide-react';
+import { Download, Send, Clock, Users, MapPin, CheckCircle2, AlertTriangle, TrendingUp, CalendarX, Wallet, LucideIcon } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { StatCard, StatCardBadgeTone } from '../../components/ui/StatCard';
+import { Badge } from '../../components/ui/Badge';
 import {
   downloadSiteDossierPdf,
   getBillingReport,
@@ -212,59 +215,51 @@ export const ReportsPage: React.FC = () => {
     }
   };
 
-  const summaryCards = useMemo(() => {
+  const summaryCards = useMemo((): { title: string; value: React.ReactNode; icon: LucideIcon; tone: StatCardBadgeTone }[] => {
     if (!data) return [];
     const totalHours = minutesToHoursLabel(data.totals.totalMinutes);
     return [
-      { title: 'Heures totales', value: totalHours },
-      { title: 'Agents actifs', value: data.agentReports.length },
-      { title: 'Sites couverts', value: data.siteReports.length },
-      { title: 'Ponctualité', value: pct(data.kpis.punctualityRate) },
-      { title: 'Absentéisme', value: pct(data.kpis.absenteeismRate) },
-      { title: 'Taux de réalisation', value: pct(data.kpis.realizationRate) },
+      { title: 'Heures totales', value: totalHours, icon: Clock, tone: 'blue' },
+      { title: 'Agents actifs', value: data.agentReports.length, icon: Users, tone: 'green' },
+      { title: 'Sites couverts', value: data.siteReports.length, icon: MapPin, tone: 'orange' },
+      { title: 'Ponctualité', value: pct(data.kpis.punctualityRate), icon: CheckCircle2, tone: 'blue' },
+      { title: 'Absentéisme', value: pct(data.kpis.absenteeismRate), icon: AlertTriangle, tone: 'red' },
+      { title: 'Taux de réalisation', value: pct(data.kpis.realizationRate), icon: TrendingUp, tone: 'green' },
     ];
   }, [data]);
 
   return (
     <div>
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Rapports & exports</span>
-          <h2>Préparez la paie et la facturation</h2>
-          <p>Produisez en un clic des indicateurs agents et sites pour la période de votre choix.</p>
-        </div>
-        <div className="page-hero__accent">
-          <h3>Période</h3>
-          <div className="filter-grid" style={{ marginBottom: 0 }}>
-            <label className="filter-field filter-card">
-              Du
-              <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} />
-            </label>
-            <label className="filter-field filter-card">
-              Au
-              <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} />
-            </label>
-            <label className="filter-field filter-card">
-              Site
-              <select value={siteId} onChange={(event) => setSiteId(event.target.value)}>
-                {siteOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
+      <PageHeader
+        title="Préparez la paie et la facturation"
+        subtitle="Produisez en un clic des indicateurs agents et sites pour la période de votre choix."
+      />
+
+      <div className="filter-grid">
+        <label className="filter-field filter-card">
+          Du
+          <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} />
+        </label>
+        <label className="filter-field filter-card">
+          Au
+          <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} />
+        </label>
+        <label className="filter-field filter-card">
+          Site
+          <select value={siteId} onChange={(event) => setSiteId(event.target.value)}>
+            {siteOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {summaryCards.length > 0 && (
         <div className="page-grid">
           {summaryCards.map((card) => (
-            <article key={card.title} className="card">
-              <span className="card__meta">{card.title}</span>
-              <p className="card__value">{card.value}</p>
-            </article>
+            <StatCard key={card.title} icon={card.icon} badgeTone={card.tone} value={card.value} label={card.title} />
           ))}
         </div>
       )}
@@ -284,24 +279,22 @@ export const ReportsPage: React.FC = () => {
               <div className="page-grid">
                 {(
                   [
-                    { key: 'punctualityRate', label: 'Ponctualité' },
-                    { key: 'absenteeismRate', label: 'Absentéisme' },
-                    { key: 'realizationRate', label: 'Taux de réalisation' },
+                    { key: 'punctualityRate', label: 'Ponctualité', icon: CheckCircle2, tone: 'blue' as const },
+                    { key: 'absenteeismRate', label: 'Absentéisme', icon: AlertTriangle, tone: 'red' as const },
+                    { key: 'realizationRate', label: 'Taux de réalisation', icon: TrendingUp, tone: 'green' as const },
                   ] as const
-                ).map(({ key, label }) => {
+                ).map(({ key, label, icon, tone }) => {
                   const currentValue = comparison.current.kpis[key];
                   const delta = comparison.deltas[key];
-                  const positive = delta != null && delta >= 0;
                   return (
-                    <article key={key} className="card">
-                      <span className="card__meta">{label}</span>
-                      <p className="card__value">{currentValue == null ? '—' : `${currentValue}%`}</p>
-                      {delta != null && (
-                        <span style={{ color: positive ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
-                          {positive ? '▲' : '▼'} {Math.abs(delta)}%
-                        </span>
-                      )}
-                    </article>
+                    <StatCard
+                      key={key}
+                      icon={icon}
+                      badgeTone={tone}
+                      value={currentValue == null ? '—' : `${currentValue}%`}
+                      label={label}
+                      trend={delta != null ? { direction: delta >= 0 ? 'up' : 'down', percent: Math.abs(delta) } : undefined}
+                    />
                   );
                 })}
               </div>
@@ -411,32 +404,17 @@ export const ReportsPage: React.FC = () => {
                     </Button>
                   </div>
                   <div className="page-grid">
-                    <article className="card">
-                      <span className="card__meta">Heures réalisées</span>
-                      <p className="card__value">{minutesToHoursLabel(site.totalMinutes)}</p>
-                    </article>
-                    <article className="card">
-                      <span className="card__meta">Ponctualité</span>
-                      <p className="card__value">{pct(site.punctualityRate)}</p>
-                    </article>
-                    <article className="card">
-                      <span className="card__meta">Jours non couverts</span>
-                      <p className="card__value">{site.uncoveredDays}</p>
-                    </article>
-                    <article className="card">
-                      <span className="card__meta">Taux de complétion</span>
-                      <p className="card__value">{pct(site.completionRate)}</p>
-                    </article>
-                    <article className="card">
-                      <span className="card__meta">Anomalies</span>
-                      <p className="card__value">{site.anomalyCount}</p>
-                    </article>
-                    <article className="card">
-                      <span className="card__meta">Heures facturables / internes</span>
-                      <p className="card__value">
-                        {site.billableHours} h / {site.internalHours} h
-                      </p>
-                    </article>
+                    <StatCard icon={Clock} badgeTone="blue" value={minutesToHoursLabel(site.totalMinutes)} label="Heures réalisées" />
+                    <StatCard icon={CheckCircle2} badgeTone="green" value={pct(site.punctualityRate)} label="Ponctualité" />
+                    <StatCard icon={CalendarX} badgeTone="orange" value={site.uncoveredDays} label="Jours non couverts" />
+                    <StatCard icon={TrendingUp} badgeTone="blue" value={pct(site.completionRate)} label="Taux de complétion" />
+                    <StatCard icon={AlertTriangle} badgeTone="red" value={site.anomalyCount} label="Anomalies" />
+                    <StatCard
+                      icon={Wallet}
+                      badgeTone="green"
+                      value={`${site.billableHours} h / ${site.internalHours} h`}
+                      label="Heures facturables / internes"
+                    />
                   </div>
                   <p style={{ color: 'var(--color-muted)' }}>
                     Seuil d'accomplissement du quota : {site.quota.threshold}% — en dessous, les heures manquantes jusqu'au
@@ -462,11 +440,9 @@ export const ReportsPage: React.FC = () => {
                             <td>{pct(agent.accomplishmentRate)}</td>
                             <td>
                               {agent.meetsQuota ? (
-                                <span style={{ color: '#16a34a', fontWeight: 600 }}>Quota atteint</span>
+                                <Badge tone="success">Quota atteint</Badge>
                               ) : (
-                                <span style={{ color: '#dc2626', fontWeight: 600 }}>
-                                  -{minutesToHoursLabel(agent.penaltyMinutes)}
-                                </span>
+                                <Badge tone="danger">-{minutesToHoursLabel(agent.penaltyMinutes)}</Badge>
                               )}
                             </td>
                           </tr>

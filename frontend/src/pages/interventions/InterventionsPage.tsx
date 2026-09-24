@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Filter, Download, Eye, Pencil, Copy, X } from 'lucide-react';
+import { Plus, Filter, Download, Eye, Pencil, Copy, X, AlertTriangle } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { AssignmentSuggestion, DurationEstimate, Intervention, InterventionStatus, InterventionType } from '../../types/intervention';
 import { isApprovalRequest } from '../../types/approval';
@@ -19,9 +19,13 @@ import { SiteCategory } from '../../types/category';
 import { Site } from '../../types/site';
 import { User } from '../../types/user';
 import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { FilterBar, FilterField } from '../../components/ui/FilterBar';
 import { PromptModal } from '../../components/ui/PromptModal';
 import { StatusChip } from '../../components/ui/StatusChip';
+import { Badge } from '../../components/ui/Badge';
+import { Pagination } from '../../components/ui/Pagination';
+import { DonutChartCard } from '../../components/charts/DonutChartCard';
 import { InterventionFormModal } from '../../components/interventions/InterventionFormModal';
 import { InterventionViewModal } from '../../components/interventions/InterventionViewModal';
 import { GabaritsPage } from './GabaritsPage';
@@ -89,10 +93,7 @@ export const InterventionsPage: React.FC = () => {
   const [durationEstimate, setDurationEstimate] = useState<DurationEstimate | null>(null);
   const [duplicatePromptFor, setDuplicatePromptFor] = useState<Intervention | null>(null);
   const [cancelPromptFor, setCancelPromptFor] = useState<Intervention | null>(null);
-  const needsReviewCount = useMemo(
-    () => interventions.filter((i) => i.status === 'NEEDS_REVIEW').length,
-    [interventions],
-  );
+  const [needsReviewTotal, setNeedsReviewTotal] = useState(0);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -163,6 +164,19 @@ export const InterventionsPage: React.FC = () => {
       .finally(() => {
         if (!options?.silent) setLoading(false);
       });
+    listInterventions(token, {
+      startDate: query.startDate,
+      endDate: query.endDate,
+      siteId: query.siteId,
+      type: query.type,
+      subType: query.subType,
+      agentId: query.agentId,
+      status: 'NEEDS_REVIEW',
+      page: 1,
+      pageSize: 1,
+    })
+      .then((data) => setNeedsReviewTotal((data as any)?.total ?? 0))
+      .catch(() => {});
   };
 
   const exportCsv = () => {
@@ -233,6 +247,20 @@ export const InterventionsPage: React.FC = () => {
 
   const siteOptions = useMemo(() => [{ value: 'all', label: 'Tous les sites' }].concat(sites.map((site) => ({ value: site.id, label: site.name }))), [sites]);
   const agentOptions = useMemo(() => [{ value: 'all', label: 'Tous les agents' }].concat(users.map((user) => ({ value: user.id, label: user.name }))), [users]);
+
+  // Répartition des statuts de la page courante (pas de nouvelle source de
+  // données) — même limite que les widgets du tableau de bord.
+  const statusBreakdown = useMemo(() => {
+    if (interventions.length === 0) return [];
+    const counts: Record<string, number> = {};
+    interventions.forEach((intervention) => {
+      counts[intervention.status] = (counts[intervention.status] ?? 0) + 1;
+    });
+    const total = interventions.length;
+    return STATUS_OPTIONS.filter((option) => option.value !== 'all')
+      .map((option) => ({ label: option.label, value: Math.round(((counts[option.value] ?? 0) / total) * 100) }))
+      .filter((entry) => entry.value > 0);
+  }, [interventions]);
   const hasStarted = (intervention: Intervention) => {
     const planned = new Date(`${intervention.date}T${intervention.startTime}:00`);
     return Date.now() >= planned.getTime();
@@ -330,19 +358,15 @@ export const InterventionsPage: React.FC = () => {
 
   return (
     <div className="interventions-page">
-      <div className="page-header">
-        <span className="pill">Interventions</span>
-        <h2>Vue terrain concrète</h2>
-        <p>Planifiez les missions régulières ou ponctuelles, les règles récurrentes et les tournées multi-sites.</p>
-        {tab === 'planning' && (
-          <>
-            <Button type="button" icon={Plus} onClick={openTemplateCreateForm}>
-              Nouvelle intervention
-            </Button>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-              <span className="pill" style={{ background: '#fff5e0', color: '#b15b00' }}>
-                À valider : {needsReviewCount}
-              </span>
+      <PageHeader
+        title="Vue terrain concrète"
+        subtitle="Planifiez les missions régulières ou ponctuelles, les règles récurrentes et les tournées multi-sites."
+        actions={
+          tab === 'planning' && (
+            <>
+              <Badge tone="warning" icon={AlertTriangle}>
+                À valider : {needsReviewTotal}
+              </Badge>
               <Button
                 type="button"
                 variant="ghost"
@@ -354,10 +378,13 @@ export const InterventionsPage: React.FC = () => {
               <Button type="button" variant="ghost" icon={Download} onClick={exportCsv}>
                 Export CSV
               </Button>
-            </div>
-          </>
-        )}
-      </div>
+              <Button type="button" icon={Plus} onClick={openTemplateCreateForm}>
+                Nouvelle intervention
+              </Button>
+            </>
+          )
+        }
+      />
 
       <div className="chips" style={{ margin: '1rem 0' }}>
         <button type="button" className={`chip ${tab === 'planning' ? 'chip--selected' : ''}`} onClick={() => setTab('planning')}>
@@ -427,22 +454,8 @@ export const InterventionsPage: React.FC = () => {
             ))}
           </select>
         </FilterField>
-        <div className="pagination">
-          <Button type="button" variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-            Précédent
-          </Button>
-          <span className="card__meta">Page {page}</span>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              const maxPage = Math.ceil(total / pageSize) || 1;
-              setPage((p) => (p < maxPage ? p + 1 : p));
-            }}
-            disabled={page * pageSize >= total}
-          >
-            Suivant
-          </Button>
+        <div className="pagination-bar">
+          <Pagination page={page} pageCount={Math.ceil(total / pageSize) || 1} onChange={setPage} />
           <span className="card__meta">{total} résultats</span>
         </div>
       </FilterBar>
@@ -467,6 +480,17 @@ export const InterventionsPage: React.FC = () => {
         onFetchSuggestions={fetchSuggestions}
         onAddSuggestedAgent={addSuggestedAgent}
       />
+
+      {statusBreakdown.length > 0 && (
+        <div style={{ maxWidth: 420, marginBottom: '1.5rem' }}>
+          <DonutChartCard
+            title="Répartition des statuts (page courante)"
+            data={statusBreakdown}
+            centerValue={interventions.length}
+            centerLabel="interventions"
+          />
+        </div>
+      )}
 
       <section className="panel">
         <h3>Interventions planifiées</h3>
@@ -561,22 +585,8 @@ export const InterventionsPage: React.FC = () => {
           </div>
         )}
       </section>
-      <div className="pagination" style={{ marginTop: '1rem' }}>
-        <Button type="button" variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-          Précédent
-        </Button>
-        <span className="card__meta">Page {page}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            const maxPage = Math.ceil(total / pageSize) || 1;
-            setPage((p) => (p < maxPage ? p + 1 : p));
-          }}
-          disabled={page * pageSize >= total}
-        >
-          Suivant
-        </Button>
+      <div className="pagination-bar">
+        <Pagination page={page} pageCount={Math.ceil(total / pageSize) || 1} onChange={setPage} />
         <span className="card__meta">{total} résultats</span>
       </div>
 

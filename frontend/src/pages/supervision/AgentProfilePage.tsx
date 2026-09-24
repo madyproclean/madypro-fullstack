@@ -16,6 +16,8 @@ import { Certification, EmployeeDocument, UserBadge } from '../../types/team';
 import { Button } from '../../components/ui/Button';
 import { List, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDateTime } from '../../utils/datetime';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const ROLE_LABELS: Record<string, string> = { ADMIN: 'Admin', SUPERVISOR: 'Superviseur', AGENT: 'Agent' };
 const INTERVENTION_STATUS_LABELS: Record<string, string> = {
@@ -149,33 +151,29 @@ export const AgentProfilePage: React.FC = () => {
   if (!user) {
     return (
       <div className="page">
-        <div className="page-header">
-          <span className="pill">Équipes</span>
-          <h2>Agent introuvable</h2>
-        </div>
-        <Link to="/users" className="btn btn--ghost">
-          Retour à la liste
-        </Link>
+        <PageHeader
+          title="Agent introuvable"
+          actions={
+            <Link to="/users" className="btn btn--ghost">
+              Retour à la liste
+            </Link>
+          }
+        />
       </div>
     );
   }
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>
-          {user.firstName} {user.lastName}
-        </h2>
-        <p>Fiche complète : coordonnées, sites, planning, pointages, absences et documents RH.</p>
-      </div>
+      <PageHeader
+        title={`${user.firstName} ${user.lastName}`}
+        subtitle="Fiche complète : coordonnées, sites, planning, pointages, absences et documents RH."
+      />
 
       <div className="panel" style={{ display: 'grid', gap: '0.5rem', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="status-chip status-chip--info">{ROLE_LABELS[user.role?.toUpperCase()] ?? user.role}</span>
-          <span className={`status-chip ${user.active ? 'status-chip--success' : 'status-chip--warning'}`}>
-            {user.active ? 'Actif' : 'Inactif'}
-          </span>
+          <Badge tone="info">{ROLE_LABELS[user.role?.toUpperCase()] ?? user.role}</Badge>
+          <Badge tone={user.active ? 'success' : 'warning'}>{user.active ? 'Actif' : 'Inactif'}</Badge>
         </div>
         <p className="card__meta">Email : {user.email}</p>
         <p className="card__meta">Téléphone : {user.phone || '—'}</p>
@@ -190,14 +188,14 @@ export const AgentProfilePage: React.FC = () => {
         <h3>Sites</h3>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
           {assignedSites.supervised.map((s) => (
-            <span key={s.id} className="status-chip status-chip--info">
+            <Badge key={s.id} tone="info">
               {s.name} (supervisé)
-            </span>
+            </Badge>
           ))}
           {assignedSites.intervened.map((name) => (
-            <span key={name} className="status-chip status-chip--success">
+            <Badge key={name} tone="success">
               {name}
-            </span>
+            </Badge>
           ))}
           {assignedSites.supervised.length === 0 && assignedSites.intervened.length === 0 && (
             <span className="card__meta">Aucun site associé pour la période affichée.</span>
@@ -407,7 +405,7 @@ export const AgentProfilePage: React.FC = () => {
                 return (
                   <tr key={cert.id}>
                     <td>{cert.label}</td>
-                    <td style={expiringSoon ? { color: '#dc2626', fontWeight: 600 } : undefined}>
+                    <td style={expiringSoon ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
                       {cert.expiresAt ? cert.expiresAt.slice(0, 10) : '—'}
                     </td>
                   </tr>
@@ -464,8 +462,8 @@ export const AgentProfilePage: React.FC = () => {
         <h3>Badges</h3>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
           {badges.map((b) => (
-            <span key={b.id} className="status-chip status-chip--success" title={b.badge.description}>
-              {b.badge.label}
+            <span key={b.id} title={b.badge.description}>
+              <Badge tone="success">{b.badge.label}</Badge>
             </span>
           ))}
           {badges.length === 0 && <span className="card__meta">Aucun badge reçu.</span>}

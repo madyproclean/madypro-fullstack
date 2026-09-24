@@ -23,6 +23,8 @@ import { ChipGroup } from '../../components/ui/ChipGroup';
 import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
 import { RepeatableFieldArray } from '../../components/ui/RepeatableFieldArray';
 import { RouteOptimizationPanel } from '../../components/interventions/RouteOptimizationPanel';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const DAYS = [
   { value: 1, label: 'Lundi' },
@@ -417,18 +419,15 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
           </Button>
         </div>
       ) : (
-        <div className="page-header">
-          <span className="pill">Interventions</span>
-          <h2>Gabarits</h2>
-          <p>
-            Un gabarit d'interventions récurrentes pour un site donné — chaque arrêt peut avoir son propre
-            horaire, sa catégorie et sa fréquence, ou être un jour unique sans fréquence. Une fois validé, les
-            interventions réelles sont créées automatiquement peu avant leur début.
-          </p>
-          <Button type="button" icon={Plus} onClick={() => openCreateForm(true)}>
-            Nouveau gabarit
-          </Button>
-        </div>
+        <PageHeader
+          title="Gabarits"
+          subtitle="Un gabarit d'interventions récurrentes pour un site donné — chaque arrêt peut avoir son propre horaire, sa catégorie et sa fréquence, ou être un jour unique sans fréquence. Une fois validé, les interventions réelles sont créées automatiquement peu avant leur début."
+          actions={
+            <Button type="button" icon={Plus} onClick={() => openCreateForm(true)}>
+              Nouveau gabarit
+            </Button>
+          }
+        />
       )}
 
       <RouteOptimizationPanel agentOptions={agentOptions} title="Optimisation de tournée du jour" />
@@ -474,14 +473,14 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
                       {template.endDate ? ` → ${new Date(template.endDate).toLocaleDateString('fr-FR')}` : ' → indéfini'}
                     </td>
                     <td>
-                      <span className={`status-chip ${template.validatedAt ? 'status-chip--success' : 'status-chip--warning'}`}>
+                      <Badge tone={template.validatedAt ? 'success' : 'warning'}>
                         {template.validatedAt ? 'Validé' : 'En attente de validation'}
-                      </span>
+                      </Badge>
                     </td>
                     <td>
-                      <span className={`status-chip ${template.active ? 'status-chip--success' : 'status-chip--warning'}`}>
+                      <Badge tone={template.active ? 'success' : 'warning'}>
                         {template.active ? 'Active' : 'Inactive'}
-                      </span>
+                      </Badge>
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -527,7 +526,7 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
         />
         <ModalBody>
             <form
-              className="form-card"
+              className="form-card form-card--wide"
               onSubmit={handleSubmit}
               style={{ boxShadow: 'none', padding: 0, display: 'grid', gap: '1rem' }}
             >

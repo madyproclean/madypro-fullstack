@@ -5,6 +5,7 @@ import { listSites } from '../../services/api/sites.api';
 import { Site } from '../../types/site';
 import { Button } from '../../components/ui/Button';
 import { Eye } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const SupervisorSitesPage: React.FC = () => {
   const { token, user, notify } = useAuthContext();
@@ -31,11 +32,10 @@ export const SupervisorSitesPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Supervision</span>
-        <h2>Mes sites</h2>
-        <p>Liste des sites dont vous êtes responsable, avec accès direct à la présence temps réel.</p>
-      </div>
+      <PageHeader
+        title="Mes sites"
+        subtitle="Liste des sites dont vous êtes responsable, avec accès direct à la présence temps réel."
+      />
       <div className="panel">
         {loading ? (
           <p>Chargement...</p>

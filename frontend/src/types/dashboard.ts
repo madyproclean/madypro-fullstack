@@ -17,6 +17,9 @@ export type DashboardAlert = {
   id: string;
   type: string;
   description: string;
+  site: string;
+  supervisor: string;
+  agent: string;
   severity: 'warning' | 'info' | 'error';
 };
 

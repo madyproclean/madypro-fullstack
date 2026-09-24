@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { listApprovalRequests, approveRequest, rejectRequest } from '../../services/api/approvals.api';
 import { listUsers } from '../../services/api/users.api';
@@ -11,9 +11,13 @@ import {
   ValidateTemplatePayload,
 } from '../../types/approval';
 import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { PromptModal } from '../../components/ui/PromptModal';
 import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
-import { Check, X } from 'lucide-react';
+import { Badge, BadgeTone } from '../../components/ui/Badge';
+import { StatCard } from '../../components/ui/StatCard';
+import { BarChartCard } from '../../components/charts/BarChartCard';
+import { Check, ClipboardCheck, X } from 'lucide-react';
 
 const ACTION_LABELS: Record<ApprovalActionType, string> = {
   CREATE_INTERVENTION: 'Création d’intervention',
@@ -32,12 +36,20 @@ const STATUS_LABELS: Record<string, string> = {
   SUPERSEDED: 'Remplacée',
 };
 
+const STATUS_TONES: Record<string, BadgeTone> = {
+  PENDING: 'info',
+  APPROVED: 'success',
+  REJECTED: 'danger',
+  SUPERSEDED: 'neutral',
+};
+
 export const ApprovalsPage: React.FC = () => {
   const { token, notify } = useAuthContext();
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   const [agentNames, setAgentNames] = useState<Record<string, string>>({});
   const [siteNames, setSiteNames] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState('PENDING');
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [datesModalId, setDatesModalId] = useState<string | null>(null);
@@ -55,6 +67,15 @@ export const ApprovalsPage: React.FC = () => {
   useEffect(() => {
     load();
   }, [token, statusFilter]);
+
+  const loadPendingCount = () => {
+    if (!token) return;
+    listApprovalRequests(token, { status: 'PENDING', pageSize: 1 })
+      .then((res) => setPendingCount(res.total))
+      .catch(() => {});
+  };
+
+  useEffect(loadPendingCount, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -78,8 +99,19 @@ export const ApprovalsPage: React.FC = () => {
       .catch(() => setSiteNames({}));
   }, [token]);
 
-  const pendingCount = useMemo(() => requests.filter((r) => r.status === 'PENDING').length, [requests]);
   const datesModalRequest = requests.find((r) => r.id === datesModalId) ?? null;
+
+  // Répartition par type d'action des demandes actuellement affichées
+  // (pas de nouvelle source de données).
+  const actionBreakdown = (() => {
+    if (requests.length === 0) return [];
+    const counts = new Map<string, number>();
+    requests.forEach((req) => {
+      const label = ACTION_LABELS[req.actionType] ?? req.actionType;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([action, Total]) => ({ action, Total }));
+  })();
 
   const describe = (req: ApprovalRequest) => {
     const payload = req.payload as any;
@@ -133,6 +165,7 @@ export const ApprovalsPage: React.FC = () => {
       await approveRequest(token, id);
       notify('Demande approuvée et appliquée');
       await load();
+      loadPendingCount();
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Impossible d’approuver cette demande', 'error');
     } finally {
@@ -151,6 +184,7 @@ export const ApprovalsPage: React.FC = () => {
       await rejectRequest(token, id, comment);
       notify('Demande refusée');
       await load();
+      loadPendingCount();
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Impossible de refuser cette demande', 'error');
     } finally {
@@ -160,18 +194,18 @@ export const ApprovalsPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Validation</span>
-        <h2>Demandes de validation</h2>
-        <p>Actions planning proposées par les superviseurs, en attente d’une décision admin.</p>
-      </div>
+      <PageHeader
+        title="Demandes de validation"
+        subtitle="Actions planning proposées par les superviseurs, en attente d’une décision admin."
+      />
 
       <div className="page-grid" style={{ marginBottom: '1rem' }}>
-        <article className="card">
-          <span className="card__meta">En attente</span>
-          <p className="card__value">{pendingCount}</p>
-          <p className="card__meta">{loading ? 'Chargement...' : 'À traiter'}</p>
-        </article>
+        <StatCard
+          icon={ClipboardCheck}
+          badgeTone="orange"
+          value={pendingCount}
+          label={loading ? 'Chargement...' : 'Demandes en attente'}
+        />
       </div>
 
       <div className="filter-grid" style={{ marginBottom: '1rem' }}>
@@ -186,6 +220,12 @@ export const ApprovalsPage: React.FC = () => {
           </select>
         </label>
       </div>
+
+      {actionBreakdown.length > 0 && (
+        <div style={{ maxWidth: 560, marginBottom: '1.5rem' }}>
+          <BarChartCard title="Demandes par type d'action" data={actionBreakdown} xKey="action" series={['Total']} />
+        </div>
+      )}
 
       <div className="panel">
         <div className="table-wrapper">
@@ -229,17 +269,9 @@ export const ApprovalsPage: React.FC = () => {
                     )}
                   </td>
                   <td>
-                    <span
-                      className={`status-chip ${
-                        req.status === 'PENDING'
-                          ? 'status-chip--info'
-                          : req.status === 'APPROVED'
-                          ? 'status-chip--success'
-                          : 'status-chip--warning'
-                      }`}
-                    >
+                    <Badge tone={STATUS_TONES[req.status] ?? 'neutral'}>
                       {STATUS_LABELS[req.status] ?? req.status}
-                    </span>
+                    </Badge>
                     {req.status !== 'PENDING' && req.reviewComment && (
                       <div className="card__meta" style={{ marginTop: '0.25rem' }}>
                         {req.reviewComment}

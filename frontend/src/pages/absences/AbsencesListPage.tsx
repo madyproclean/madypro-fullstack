@@ -19,11 +19,17 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
 import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { PromptModal } from '../../components/ui/PromptModal';
 import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
+import { Badge, BadgeTone } from '../../components/ui/Badge';
+import { StatCard } from '../../components/ui/StatCard';
+import { Pagination } from '../../components/ui/Pagination';
+import { BarChartCard } from '../../components/charts/BarChartCard';
+import { DonutChartCard } from '../../components/charts/DonutChartCard';
 import { useAuthContext } from '../../context/AuthContext';
 import { User } from '../../types/user';
-import { Plus, RotateCcw, Check, X, ArrowLeft, ArrowRight, Trash2 } from 'lucide-react';
+import { Plus, RotateCcw, Check, X, Trash2, Clock, CheckCircle2, FileEdit } from 'lucide-react';
 
 const TYPE_OPTIONS: { value: AbsenceType | 'all'; label: string }[] = [
   { value: 'all', label: 'Tous les types' },
@@ -95,6 +101,7 @@ export const AbsencesListPage: React.FC = () => {
   const [decisionPrompt, setDecisionPrompt] = useState<{ absence: Absence; status: AbsenceStatus } | null>(null);
   const [blockedPeriods, setBlockedPeriods] = useState<BlockedPeriod[]>([]);
   const [newBlockedPeriod, setNewBlockedPeriod] = useState({ from: '', to: '', reason: '' });
+  const [indicators, setIndicators] = useState({ pending: 0, approved: 0, manual: 0 });
 
   const loadBlockedPeriods = () => {
     if (!token) return;
@@ -166,6 +173,26 @@ export const AbsencesListPage: React.FC = () => {
     fetchAbsences();
   }, [token, filters.startDate, filters.endDate, filters.agentId, filters.type, filters.status, page, pageSize]);
 
+  useEffect(() => {
+    if (!token) return;
+    const scope = {
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      agentId: filters.agentId,
+      type: filters.type,
+      pageSize: 1,
+    };
+    Promise.all([
+      listAbsences(token, { ...scope, status: 'PENDING' }),
+      listAbsences(token, { ...scope, status: 'APPROVED' }),
+      listAbsences(token, { ...scope, status: 'all', manual: true }),
+    ])
+      .then(([pending, approved, manual]) => {
+        setIndicators({ pending: pending.total, approved: approved.total, manual: manual.total });
+      })
+      .catch(() => {});
+  }, [token, filters.startDate, filters.endDate, filters.agentId, filters.type]);
+
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setPage(1);
@@ -177,6 +204,29 @@ export const AbsencesListPage: React.FC = () => {
     ),
     [agents]
   );
+
+  // Agrégats dérivés de la page courante (pas de nouvelle source de données) —
+  // même limite que les widgets du tableau de bord.
+  const typeBreakdown = useMemo(() => {
+    const counts = new Map<string, number>();
+    pageData.items.forEach((absence) => {
+      const label = TYPE_OPTIONS.find((option) => option.value === absence.type)?.label ?? absence.type;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([type, Total]) => ({ type, Total }));
+  }, [pageData.items]);
+
+  const statusBreakdown = useMemo(() => {
+    if (pageData.items.length === 0) return [];
+    const counts = { PENDING: 0, APPROVED: 0, REJECTED: 0 };
+    pageData.items.forEach((absence) => {
+      counts[absence.status] = (counts[absence.status] ?? 0) + 1;
+    });
+    const total = pageData.items.length;
+    return STATUS_OPTIONS.filter((option) => option.value !== 'all')
+      .map((option) => ({ label: option.label, value: Math.round(((counts[option.value as AbsenceStatus] ?? 0) / total) * 100) }))
+      .filter((entry) => entry.value > 0);
+  }, [pageData.items]);
 
   const handleManualChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -245,27 +295,25 @@ export const AbsencesListPage: React.FC = () => {
     }
   };
 
-  const statusClass = (status: AbsenceStatus) => {
+  const statusTone = (status: AbsenceStatus): BadgeTone => {
     switch (status) {
       case 'APPROVED':
-        return 'status-chip--success';
+        return 'success';
       case 'PENDING':
-        return 'status-chip--warning';
+        return 'warning';
+      case 'REJECTED':
+        return 'danger';
       default:
-        return 'status-chip--info';
+        return 'info';
     }
   };
 
   return (
     <div className="absences-page">
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Absences & congés</span>
-          <h2>Gardez la main sur la disponibilité</h2>
-          <p>
-            Validez les demandes, saisissez les absences terrain et synchronisez la paie avec la réalité
-            opérationnelle Madypro Clean.
-          </p>
+      <PageHeader
+        title="Gardez la main sur la disponibilité"
+        subtitle="Validez les demandes, saisissez les absences terrain et synchronisez la paie avec la réalité opérationnelle Madypro Clean."
+        actions={
           <Button
             type="button"
             icon={Plus}
@@ -276,22 +324,30 @@ export const AbsencesListPage: React.FC = () => {
           >
             Créer une absence manuelle
           </Button>
-        </div>
-        <div className="page-hero__accent">
-          <h3>Indicateurs</h3>
-          <ul className="list-line">
-            <li>
-              Demandés <span>{pageData.items.filter((item) => item.status === 'PENDING').length}</span>
-            </li>
-            <li>
-              Validés <span>{pageData.items.filter((item) => item.status === 'APPROVED').length}</span>
-            </li>
-            <li>
-              Manuels <span>{pageData.items.filter((item) => item.manual).length}</span>
-            </li>
-          </ul>
-        </div>
+        }
+      />
+
+      <div className="page-grid" style={{ marginBottom: '1.5rem' }}>
+        <StatCard icon={Clock} badgeTone="orange" value={indicators.pending} label="Demandés" />
+        <StatCard icon={CheckCircle2} badgeTone="green" value={indicators.approved} label="Validés" />
+        <StatCard icon={FileEdit} badgeTone="blue" value={indicators.manual} label="Manuels" />
       </div>
+
+      {(typeBreakdown.length > 0 || statusBreakdown.length > 0) && (
+        <div className="page-grid page-grid--charts">
+          {typeBreakdown.length > 0 && (
+            <BarChartCard title="Absences par type" data={typeBreakdown} xKey="type" series={['Total']} />
+          )}
+          {statusBreakdown.length > 0 && (
+            <DonutChartCard
+              title="Répartition par statut"
+              data={statusBreakdown}
+              centerValue={pageData.items.length}
+              centerLabel="absences"
+            />
+          )}
+        </div>
+      )}
 
       <div className="filter-grid" role="search">
         <label className="filter-field filter-card">
@@ -334,7 +390,7 @@ export const AbsencesListPage: React.FC = () => {
         </label>
       </div>
 
-      <Modal open={manualOpen} onClose={() => setManualOpen(false)} maxWidth={900} labelledBy="manual-absence-title">
+      <Modal open={manualOpen} onClose={() => setManualOpen(false)} maxWidth={560} labelledBy="manual-absence-title">
         <ModalHeader
           eyebrow="Absence"
           title="Absence manuelle"
@@ -427,9 +483,9 @@ export const AbsencesListPage: React.FC = () => {
                     </td>
                     <td>{absence.reason}</td>
                     <td>
-                      <span className={`status-chip ${statusClass(absence.status)}`}>
+                      <Badge tone={statusTone(absence.status)}>
                         {STATUS_OPTIONS.find((option) => option.value === absence.status)?.label ?? absence.status}
-                      </span>
+                      </Badge>
                     </td>
                     <td>
                       <div className="table-actions">
@@ -480,24 +536,8 @@ export const AbsencesListPage: React.FC = () => {
         )}
       </section>
 
-      <div className="pagination" style={{ marginTop: '1rem' }}>
-        <Button type="button" variant="ghost" icon={ArrowLeft} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-          Précédent
-        </Button>
-        <span className="card__meta">Page {page}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          icon={ArrowRight}
-          iconPosition="right"
-          onClick={() => {
-            const maxPage = Math.ceil(pageData.total / pageSize) || 1;
-            setPage((p) => (p < maxPage ? p + 1 : p));
-          }}
-          disabled={page * pageSize >= pageData.total}
-        >
-          Suivant
-        </Button>
+      <div className="pagination-bar">
+        <Pagination page={page} pageCount={Math.ceil(pageData.total / pageSize) || 1} onChange={setPage} />
         <span className="card__meta">{pageData.total} résultats</span>
       </div>
 

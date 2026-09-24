@@ -13,6 +13,7 @@ import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { formatDateTime } from '../../utils/datetime';
 import { Check, Plus, Power, KeyRound, Trash2 } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const WebhooksPage: React.FC = () => {
   const { token, notify } = useAuthContext();
@@ -95,14 +96,15 @@ export const WebhooksPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Paramètres</span>
-        <h2>Webhooks</h2>
-        <p>Intégrations sortantes : notifiez vos outils tiers en temps réel (paie, messagerie, CRM…).</p>
-        <Button type="button" onClick={() => setFormVisible((v) => !v)}>
-          {formVisible ? 'Fermer' : 'Nouveau webhook'}
-        </Button>
-      </div>
+      <PageHeader
+        title="Webhooks"
+        subtitle="Intégrations sortantes : notifiez vos outils tiers en temps réel (paie, messagerie, CRM…)."
+        actions={
+          <Button type="button" onClick={() => setFormVisible((v) => !v)}>
+            {formVisible ? 'Fermer' : 'Nouveau webhook'}
+          </Button>
+        }
+      />
 
       {revealedSecret && (
         <div className="settings-card" style={{ marginBottom: '1rem', borderColor: '#16a34a' }}>

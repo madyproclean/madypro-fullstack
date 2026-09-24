@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Clock, CheckCircle2, CalendarX, TrendingUp, AlertTriangle, Wallet } from 'lucide-react';
+import { StatCard } from '../../components/ui/StatCard';
+import { Badge } from '../../components/ui/Badge';
 import { useAuthContext } from '../../context/AuthContext';
 import { downloadSiteDossierPdf, getSiteDossierReport } from '../../services/api/reports.api';
 import { listSites } from '../../services/api/sites.api';
 import { SiteDossierReport } from '../../types/report';
 import { Site } from '../../types/site';
 import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const today = new Date();
@@ -64,35 +67,30 @@ export const SupervisorHoursQuotaPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Rapports</span>
-          <h2>Dossier de site — mes sites</h2>
-          <p>Heures, ponctualité, complétion, anomalies et facturation pour les sites dont vous avez la charge.</p>
-        </div>
-        <div className="page-hero__accent">
-          <h3>Période</h3>
-          <div className="filter-grid" style={{ marginBottom: 0 }}>
-            <label className="filter-field filter-card">
-              Du
-              <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} />
-            </label>
-            <label className="filter-field filter-card">
-              Au
-              <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} />
-            </label>
-            <label className="filter-field filter-card">
-              Site
-              <select value={siteId} onChange={(event) => setSiteId(event.target.value)}>
-                {siteOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
+      <PageHeader
+        title="Dossier de site — mes sites"
+        subtitle="Heures, ponctualité, complétion, anomalies et facturation pour les sites dont vous avez la charge."
+      />
+
+      <div className="filter-grid">
+        <label className="filter-field filter-card">
+          Du
+          <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} />
+        </label>
+        <label className="filter-field filter-card">
+          Au
+          <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} />
+        </label>
+        <label className="filter-field filter-card">
+          Site
+          <select value={siteId} onChange={(event) => setSiteId(event.target.value)}>
+            {siteOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {loading && <p>Chargement du rapport...</p>}
@@ -116,32 +114,17 @@ export const SupervisorHoursQuotaPage: React.FC = () => {
                 </Button>
               </div>
               <div className="page-grid">
-                <article className="card">
-                  <span className="card__meta">Heures réalisées</span>
-                  <p className="card__value">{minutesToHoursLabel(site.totalMinutes)}</p>
-                </article>
-                <article className="card">
-                  <span className="card__meta">Ponctualité</span>
-                  <p className="card__value">{pct(site.punctualityRate)}</p>
-                </article>
-                <article className="card">
-                  <span className="card__meta">Jours non couverts</span>
-                  <p className="card__value">{site.uncoveredDays}</p>
-                </article>
-                <article className="card">
-                  <span className="card__meta">Taux de complétion</span>
-                  <p className="card__value">{pct(site.completionRate)}</p>
-                </article>
-                <article className="card">
-                  <span className="card__meta">Anomalies</span>
-                  <p className="card__value">{site.anomalyCount}</p>
-                </article>
-                <article className="card">
-                  <span className="card__meta">Heures facturables / internes</span>
-                  <p className="card__value">
-                    {site.billableHours} h / {site.internalHours} h
-                  </p>
-                </article>
+                <StatCard icon={Clock} badgeTone="blue" value={minutesToHoursLabel(site.totalMinutes)} label="Heures réalisées" />
+                <StatCard icon={CheckCircle2} badgeTone="green" value={pct(site.punctualityRate)} label="Ponctualité" />
+                <StatCard icon={CalendarX} badgeTone="orange" value={site.uncoveredDays} label="Jours non couverts" />
+                <StatCard icon={TrendingUp} badgeTone="blue" value={pct(site.completionRate)} label="Taux de complétion" />
+                <StatCard icon={AlertTriangle} badgeTone="red" value={site.anomalyCount} label="Anomalies" />
+                <StatCard
+                  icon={Wallet}
+                  badgeTone="green"
+                  value={`${site.billableHours} h / ${site.internalHours} h`}
+                  label="Heures facturables / internes"
+                />
               </div>
               <div className="table-wrapper">
                 <table className="table" aria-label={`quota d'heures — ${site.siteName}`}>
@@ -163,11 +146,9 @@ export const SupervisorHoursQuotaPage: React.FC = () => {
                         <td>{pct(agent.accomplishmentRate)}</td>
                         <td>
                           {agent.meetsQuota ? (
-                            <span style={{ color: '#16a34a', fontWeight: 600 }}>Quota atteint</span>
+                            <Badge tone="success">Quota atteint</Badge>
                           ) : (
-                            <span style={{ color: '#dc2626', fontWeight: 600 }}>
-                              -{minutesToHoursLabel(agent.penaltyMinutes)}
-                            </span>
+                            <Badge tone="danger">-{minutesToHoursLabel(agent.penaltyMinutes)}</Badge>
                           )}
                         </td>
                       </tr>

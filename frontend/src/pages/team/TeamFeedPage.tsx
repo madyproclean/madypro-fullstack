@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Textarea } from '../../components/ui/Textarea';
 import { formatDateTime } from '../../utils/datetime';
 import { Send, Trash2 } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const TeamFeedPage: React.FC = () => {
   const { token, user, notify } = useAuthContext();
@@ -52,11 +53,7 @@ export const TeamFeedPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>Fil d’actualité</h2>
-        <p>Partagez une information avec toute l’équipe.</p>
-      </div>
+      <PageHeader title="Fil d’actualité" subtitle="Partagez une information avec toute l’équipe." />
 
       <form className="form-card" onSubmit={handleSubmit} style={{ marginBottom: '1.5rem' }}>
         <Textarea

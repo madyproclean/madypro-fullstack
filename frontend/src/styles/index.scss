@@ -19,7 +19,7 @@ body {
   margin: 0;
   font-family: var(--font-body);
   line-height: 1.5;
-  background: radial-gradient(circle at top, #fff 0%, var(--color-cream) 55%, #dbeaf7 100%);
+  background: var(--color-cream);
   color: var(--color-ink);
 }
 
@@ -27,9 +27,9 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-heading);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
@@ -171,9 +171,8 @@ a {
   gap: 0.35rem;
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
-  background: #eef3ff;
-  color: #1f3d7a;
+  background: var(--color-mist);
+  color: var(--color-accent-dark);
   font-weight: 700;
   font-size: 0.85rem;
-  letter-spacing: 0.02em;
 }

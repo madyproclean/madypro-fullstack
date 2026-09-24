@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { Availability } from '../../types/team';
 import { listAvailability } from '../../services/api/team.api';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
 const today = new Date();
@@ -24,11 +25,10 @@ export const AvailabilityPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>Disponibilités déclarées</h2>
-        <p>Vue consolidée des disponibilités et indisponibilités déclarées par les agents.</p>
-      </div>
+      <PageHeader
+        title="Disponibilités déclarées"
+        subtitle="Vue consolidée des disponibilités et indisponibilités déclarées par les agents."
+      />
 
       <div className="filter-grid" role="search">
         <label className="filter-field filter-card">

@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuthContext } from '../../context/AuthContext';
 import { setupTwoFactor, confirmTwoFactor, disableTwoFactor } from '../../services/api/auth.api';
 import { Shield, Check, X, Power } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const SecuritySettingsPage: React.FC = () => {
   const { token, user, notify, login } = useAuthContext();
@@ -63,11 +64,7 @@ export const SecuritySettingsPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Paramètres</span>
-        <h2>Sécurité</h2>
-        <p>Protégez votre compte avec une double authentification.</p>
-      </div>
+      <PageHeader title="Sécurité" subtitle="Protégez votre compte avec une double authentification." />
 
       <div className="settings-grid">
         <article className="settings-card" style={{ gridColumn: 'span 2' }}>

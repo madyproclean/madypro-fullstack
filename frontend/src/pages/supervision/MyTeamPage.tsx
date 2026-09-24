@@ -12,6 +12,8 @@ import { Intervention } from '../../types/intervention';
 import { Attendance } from '../../types/attendance';
 import { Absence } from '../../types/absence';
 import { Input } from '../../components/ui/Input';
+import { Badge, BadgeTone } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const toISODate = (d: Date) => {
   const copy = new Date(d);
@@ -148,20 +150,19 @@ export const MyTeamPage: React.FC = () => {
     [team],
   );
 
-  const presenceMeta: Record<PresenceState, { label: string; tone: string }> = {
-    present: { label: 'Présent', tone: 'status-chip--success' },
-    late: { label: 'En retard', tone: 'status-chip--warning' },
-    absent: { label: 'Absent', tone: 'status-chip--warning' },
-    unknown: { label: 'Pas de mission aujourd’hui', tone: 'status-chip--info' },
+  const presenceMeta: Record<PresenceState, { label: string; tone: BadgeTone }> = {
+    present: { label: 'Présent', tone: 'success' },
+    late: { label: 'En retard', tone: 'warning' },
+    absent: { label: 'Absent', tone: 'warning' },
+    unknown: { label: 'Pas de mission aujourd’hui', tone: 'info' },
   };
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Supervision</span>
-        <h2>Mon équipe</h2>
-        <p>Tous les agents intervenant sur vos sites, avec présence du jour, planning et absences.</p>
-      </div>
+      <PageHeader
+        title="Mon équipe"
+        subtitle="Tous les agents intervenant sur vos sites, avec présence du jour, planning et absences."
+      />
 
       <div className="page-grid">
         <article className="card">
@@ -225,10 +226,10 @@ export const MyTeamPage: React.FC = () => {
               {agent.firstName} {agent.lastName}
             </h3>
             <p>
-              <span className={`status-chip ${presenceMeta[presence].tone}`}>{presenceMeta[presence].label}</span>
+              <Badge tone={presenceMeta[presence].tone}>{presenceMeta[presence].label}</Badge>
               {pendingAbsence && (
-                <span className="status-chip status-chip--warning" style={{ marginLeft: '0.4rem' }}>
-                  Absence en attente
+                <span style={{ marginLeft: '0.4rem' }}>
+                  <Badge tone="warning">Absence en attente</Badge>
                 </span>
               )}
             </p>

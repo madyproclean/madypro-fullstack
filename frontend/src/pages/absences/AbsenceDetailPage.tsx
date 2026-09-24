@@ -14,6 +14,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { PromptModal } from '../../components/ui/PromptModal';
 import { Check, X, ArrowLeft } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const TYPE_LABELS: Record<Absence['type'], string> = {
   SICK: 'Arrêt maladie',
@@ -106,26 +107,21 @@ export const AbsenceDetailPage: React.FC = () => {
   if (!absence) {
     return (
       <div>
-        <div className="page-header">
-          <span className="pill">Absences</span>
-          <h2>Absence introuvable</h2>
-        </div>
-        <Link to="/absences" className="btn btn--ghost">
-          Retour à la liste
-        </Link>
+        <PageHeader
+          title="Absence introuvable"
+          actions={
+            <Link to="/absences" className="btn btn--ghost">
+              Retour à la liste
+            </Link>
+          }
+        />
       </div>
     );
   }
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Absences</span>
-        <h2>{absence.agent.name}</h2>
-        <p>
-          {absence.from} → {absence.to}
-        </p>
-      </div>
+      <PageHeader title={absence.agent.name} subtitle={`${absence.from} → ${absence.to}`} />
 
       <section className="panel detail-grid">
         <div className="detail-grid__item">

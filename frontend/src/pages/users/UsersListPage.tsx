@@ -15,7 +15,10 @@ import { useAuthContext } from '../../context/AuthContext';
 import { UserForm } from './UserForm';
 import { listAttendance } from '../../services/api/attendance.api';
 import { Attendance } from '../../types/attendance';
-import { Plus, RotateCcw, Power, KeyRound, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, RotateCcw, Power, KeyRound, ChevronLeft, ChevronRight, Users, UserCheck, UserX } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { StatCard } from '../../components/ui/StatCard';
+import { Badge } from '../../components/ui/Badge';
 
 const EMPTY_CREATE_FORM: CreateUserPayload = {
   firstName: '',
@@ -43,6 +46,7 @@ export const UsersListPage: React.FC = () => {
   const [createForm, setCreateForm] = useState<CreateUserPayload>(EMPTY_CREATE_FORM);
   const [creating, setCreating] = useState(false);
   const [liveNotes, setLiveNotes] = useState<Array<{ id: string; text: string }>>([]);
+  const [indicators, setIndicators] = useState({ total: 0, active: 0, inactive: 0 });
   const { token, notify } = useAuthContext();
 
   useEffect(() => {
@@ -69,6 +73,19 @@ export const UsersListPage: React.FC = () => {
         notify(message, 'error');
       });
   }, [token, filters, page]);
+
+  useEffect(() => {
+    if (!token) return;
+    Promise.all([
+      listUsers(token, { pageSize: 1 }),
+      listUsers(token, { status: 'active', pageSize: 1 }),
+      listUsers(token, { status: 'inactive', pageSize: 1 }),
+    ])
+      .then(([all, active, inactive]) => {
+        setIndicators({ total: all.total, active: active.total, inactive: inactive.total });
+      })
+      .catch(() => {});
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -152,30 +169,33 @@ export const UsersListPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-hero">
-        <div className="page-hero__content">
-          <span className="pill">Coordination Madypro Clean</span>
-          <h2>Vos talents propreté</h2>
-          <p>
-            Chaque fiche valorise les responsables de sites et agents de nettoyage : zones
-            d’intervention, statuts en temps réel et contacts directs.
-          </p>
+      <PageHeader
+        title="Vos talents propreté"
+        subtitle="Chaque fiche valorise les responsables de sites et agents de nettoyage : zones d’intervention, statuts en temps réel et contacts directs."
+        actions={
           <Button type="button" icon={Plus} onClick={openCreateModal}>
             Créer un utilisateur
           </Button>
-        </div>
-        <div className="page-hero__accent">
-          <h3>Notes live</h3>
-          <ul className="list-line">
-            {liveNotes.length === 0 && <li>Aucun pointage aujourd’hui.</li>}
-            {liveNotes.map((note) => (
-              <li key={note.id}>{note.text}</li>
-            ))}
-          </ul>
-        </div>
+        }
+      />
+
+      <div className="page-grid" style={{ marginBottom: '1.5rem' }}>
+        <StatCard icon={Users} badgeTone="blue" value={indicators.total} label="Utilisateurs" />
+        <StatCard icon={UserCheck} badgeTone="green" value={indicators.active} label="Actifs" />
+        <StatCard icon={UserX} badgeTone="orange" value={indicators.inactive} label="Inactifs" />
       </div>
 
-      <Modal open={formVisible} onClose={() => setFormVisible(false)} maxWidth={900} labelledBy="user-create-title">
+      <article className="card" style={{ marginBottom: '1.5rem' }}>
+        <span className="card__meta">Notes live</span>
+        <ul className="list-line">
+          {liveNotes.length === 0 && <li>Aucun pointage aujourd’hui.</li>}
+          {liveNotes.map((note) => (
+            <li key={note.id}>{note.text}</li>
+          ))}
+        </ul>
+      </article>
+
+      <Modal open={formVisible} onClose={() => setFormVisible(false)} maxWidth={560} labelledBy="user-create-title">
         <ModalHeader
           eyebrow="Utilisateur"
           title="Nouvel utilisateur"
@@ -239,13 +259,9 @@ export const UsersListPage: React.FC = () => {
               <span className="card__meta">{ROLE_LABELS[employee.role?.toUpperCase()] ?? employee.role}</span>
               <h3>{employee.firstName} {employee.lastName}</h3>
             <p>
-              <span
-                className={`status-chip ${
-                  employee.active ? 'status-chip--success' : 'status-chip--warning'
-                }`}
-              >
+              <Badge tone={employee.active ? 'success' : 'warning'}>
                 {employee.active ? 'Actif' : 'Inactif'}
-              </span>
+              </Badge>
             </p>
             <p>Tél : {employee.phone}</p>
             <p>Email : {employee.email}</p>

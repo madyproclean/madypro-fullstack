@@ -29,7 +29,6 @@ export const ForgotPasswordPage: React.FC = () => {
   return (
     <div className="auth-page">
       <div className="auth-page__intro">
-        <span className="pill">Support Madypro Clean</span>
         <h1>Réinitialiser le mot de passe</h1>
         <p>
           Envoyez un lien sécurisé à votre adresse professionnelle pour reprendre le contrôle du

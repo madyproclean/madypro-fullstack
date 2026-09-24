@@ -20,6 +20,8 @@ import { LineItemsEditor } from '../../components/billing/LineItemsEditor';
 import { emptyLineItem } from '../../utils/lineItems';
 import { formatDateTime } from '../../utils/datetime';
 import { openPdfInNewTab } from '../../utils/downloadPdf';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const STATUS_OPTIONS: { value: QuoteStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Tous statuts' },
@@ -160,14 +162,15 @@ export const QuotesPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Devis & facturation</span>
-        <h2>Devis clients</h2>
-        <p>Suivez vos devis du brouillon jusqu’à l’acceptation.</p>
-        <Button type="button" icon={Plus} onClick={() => setFormVisible((v) => !v)}>
-          {formVisible ? 'Fermer' : 'Nouveau devis'}
-        </Button>
-      </div>
+      <PageHeader
+        title="Devis clients"
+        subtitle="Suivez vos devis du brouillon jusqu’à l’acceptation."
+        actions={
+          <Button type="button" icon={Plus} onClick={() => setFormVisible((v) => !v)}>
+            {formVisible ? 'Fermer' : 'Nouveau devis'}
+          </Button>
+        }
+      />
 
       <div className="filter-grid" role="search">
         <label className="filter-field filter-card">
@@ -287,17 +290,17 @@ export const QuotesPage: React.FC = () => {
                     <td>{quote.label}</td>
                     <td>{quote.totalTTC.toFixed(2)} €</td>
                     <td>
-                      <span
-                        className={`status-chip ${
+                      <Badge
+                        tone={
                           quote.status === 'ACCEPTED'
-                            ? 'status-chip--success'
+                            ? 'success'
                             : quote.status === 'REJECTED' || quote.status === 'CANCELLED'
-                            ? 'status-chip--info'
-                            : 'status-chip--warning'
-                        }`}
+                            ? 'info'
+                            : 'warning'
+                        }
                       >
                         {STATUS_LABELS[quote.status]}
-                      </span>
+                      </Badge>
                     </td>
                     <td>{quote.dueAt ? quote.dueAt.slice(0, 10) : '—'}</td>
                     <td>{formatDateTime(quote.issuedAt)}</td>

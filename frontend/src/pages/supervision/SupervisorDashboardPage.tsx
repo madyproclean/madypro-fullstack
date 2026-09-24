@@ -7,6 +7,8 @@ import { Attendance } from '../../types/attendance';
 import { Intervention } from '../../types/intervention';
 import { Site } from '../../types/site';
 import { formatDateTime } from '../../utils/datetime';
+import { Badge } from '../../components/ui/Badge';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const todayISO = new Date().toISOString().slice(0, 10);
 
@@ -68,11 +70,10 @@ export const SupervisorDashboardPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Supervision</span>
-        <h2>Tableau de bord superviseur</h2>
-        <p>Suivi synthétique : présence actuelle, interventions du jour et raccourcis planning.</p>
-      </div>
+      <PageHeader
+        title="Tableau de bord superviseur"
+        subtitle="Suivi synthétique : présence actuelle, interventions du jour et raccourcis planning."
+      />
 
       <div className="page-grid">
         <article className="card">
@@ -91,7 +92,7 @@ export const SupervisorDashboardPage: React.FC = () => {
         </article>
         <article className="card">
           <span className="card__meta">Sites suivis</span>
-          <p className="card__value">{supervisedSites.length || sites.length}</p>
+          <p className="card__value">{supervisedSites.length}</p>
           <p className="card__meta">{loading ? 'Chargement...' : 'Mise à jour jour J'}</p>
         </article>
       </div>
@@ -126,7 +127,7 @@ export const SupervisorDashboardPage: React.FC = () => {
                   </td>
                   <td>{intervention.type === 'REGULAR' ? 'Régulière' : 'Ponctuelle'}</td>
                   <td>
-                    <span className={`status-chip ${intervention.status === 'COMPLETED' ? 'status-chip--success' : intervention.status === 'IN_PROGRESS' ? 'status-chip--warning' : 'status-chip--info'}`}>
+                    <Badge tone={intervention.status === 'COMPLETED' ? 'success' : intervention.status === 'IN_PROGRESS' ? 'warning' : 'info'}>
                       {{
                         PLANNED: 'Planifiée',
                         IN_PROGRESS: 'En cours',
@@ -135,7 +136,7 @@ export const SupervisorDashboardPage: React.FC = () => {
                         CANCELLED: 'Annulée',
                         NO_SHOW: 'Non effectuée',
                       }[intervention.status] || intervention.status}
-                    </span>
+                    </Badge>
                   </td>
                   <td>{intervention.agents.map((agent) => agent.name).join(', ') || '—'}</td>
                   <td style={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

@@ -9,6 +9,7 @@ import { Select } from '../../components/ui/Select';
 import { Button } from '../../components/ui/Button';
 import { formatDateTime } from '../../utils/datetime';
 import { Plus, Award, Trash2 } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export const BadgesPage: React.FC = () => {
   const { token, notify } = useAuthContext();
@@ -66,11 +67,7 @@ export const BadgesPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>Badges & reconnaissance</h2>
-        <p>Catalogue de badges et attributions aux agents.</p>
-      </div>
+      <PageHeader title="Badges & reconnaissance" subtitle="Catalogue de badges et attributions aux agents." />
 
       <div className="settings-grid">
         <article className="settings-card">

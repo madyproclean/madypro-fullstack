@@ -26,6 +26,10 @@ import { Button } from '../../components/ui/Button';
 import { List, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tabs, TabPanel } from '../../components/ui/Tabs';
 import { formatDateTime } from '../../utils/datetime';
+import { Badge } from '../../components/ui/Badge';
+import { StatCard } from '../../components/ui/StatCard';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Award, ClipboardCheck, UserX, AlertTriangle } from 'lucide-react';
 
 const PROFILE_TABS = [
   { id: 'general', label: 'Informations générales' },
@@ -127,8 +131,8 @@ export const SiteProfilePage: React.FC = () => {
     listAttendance(token, { siteId: id, pageSize: 100 })
       .then((res) => setAttendance(res.items))
       .catch(() => setAttendance([]));
-    listAbsences(token, { status: 'all', pageSize: 500 })
-      .then((res) => setAbsences(res.items.filter((abs) => abs.site?.id === id)))
+    listAbsences(token, { status: 'all', siteId: id, pageSize: 500 })
+      .then((res) => setAbsences(res.items))
       .catch(() => setAbsences([]));
   }, [token, id]);
 
@@ -181,34 +185,32 @@ export const SiteProfilePage: React.FC = () => {
   if (!site) {
     return (
       <div className="page">
-        <div className="page-header">
-          <span className="pill">Sites</span>
-          <h2>Site introuvable</h2>
-        </div>
-        <Link to="/sites" className="btn btn--ghost">
-          Retour à la liste
-        </Link>
+        <PageHeader
+          title="Site introuvable"
+          actions={
+            <Link to="/sites" className="btn btn--ghost">
+              Retour à la liste
+            </Link>
+          }
+        />
       </div>
     );
   }
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Sites</span>
-        <h2>{site.name}</h2>
-        <p>Fiche complète : coordonnées, superviseurs, planning, pointages, absences, qualité et logistique.</p>
-      </div>
+      <PageHeader
+        title={site.name}
+        subtitle="Fiche complète : coordonnées, superviseurs, planning, pointages, absences, qualité et logistique."
+      />
 
       <Tabs tabs={PROFILE_TABS} active={activeTab} onChange={setActiveTab} />
 
       <TabPanel active={activeTab === 'general'}>
       <div className="panel" style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className={`status-chip ${site.active ? 'status-chip--success' : 'status-chip--warning'}`}>
-            {site.active ? 'Actif' : 'Inactif'}
-          </span>
-          {site.timeWindow && <span className="status-chip status-chip--info">{site.timeWindow}</span>}
+          <Badge tone={site.active ? 'success' : 'warning'}>{site.active ? 'Actif' : 'Inactif'}</Badge>
+          {site.timeWindow && <Badge tone="info">{site.timeWindow}</Badge>}
         </div>
         <p className="card__meta" style={{ marginTop: '0.5rem' }}>
           Adresse : {site.address}
@@ -244,24 +246,15 @@ export const SiteProfilePage: React.FC = () => {
       <TabPanel active={activeTab === 'quality'}>
       {qualityScore && (
         <div className="page-grid" style={{ marginBottom: '1rem' }}>
-          <article className="card">
-            <span className="card__meta">Score qualité ({qualityScore.periodDays}j)</span>
-            <p className="card__value">{qualityScore.score} / 100</p>
-          </article>
-          <article className="card">
-            <span className="card__meta">Interventions</span>
-            <p className="card__value">
-              {qualityScore.interventionsCompleted}/{qualityScore.interventionsTotal}
-            </p>
-          </article>
-          <article className="card">
-            <span className="card__meta">No-show</span>
-            <p className="card__value">{qualityScore.noShowCount}</p>
-          </article>
-          <article className="card">
-            <span className="card__meta">Anomalies</span>
-            <p className="card__value">{qualityScore.anomalyCount}</p>
-          </article>
+          <StatCard icon={Award} badgeTone="blue" value={`${qualityScore.score} / 100`} label={`Score qualité (${qualityScore.periodDays}j)`} />
+          <StatCard
+            icon={ClipboardCheck}
+            badgeTone="green"
+            value={`${qualityScore.interventionsCompleted}/${qualityScore.interventionsTotal}`}
+            label="Interventions"
+          />
+          <StatCard icon={UserX} badgeTone="orange" value={qualityScore.noShowCount} label="No-show" />
+          <StatCard icon={AlertTriangle} badgeTone="red" value={qualityScore.anomalyCount} label="Anomalies" />
         </div>
       )}
 
@@ -269,7 +262,7 @@ export const SiteProfilePage: React.FC = () => {
         <h3>Agents intervenant sur ce site</h3>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
           {agentsAtSite.map(([agentId, name]) => (
-            <Link key={agentId} to={`/supervision/agents/${agentId}`} className="status-chip status-chip--info">
+            <Link key={agentId} to={`/supervision/agents/${agentId}`} className="badge badge--info">
               {name}
             </Link>
           ))}
@@ -524,7 +517,7 @@ export const SiteProfilePage: React.FC = () => {
           {contracts.map((contract) => {
             const expiringSoon = new Date(contract.endDate).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000;
             return (
-              <li key={contract.id} style={expiringSoon ? { color: '#dc2626' } : undefined}>
+              <li key={contract.id} style={expiringSoon ? { color: 'var(--color-danger)' } : undefined}>
                 {contract.label} · {contract.startDate.slice(0, 10)} → {contract.endDate.slice(0, 10)}
                 {contract.slaDetails ? ` · ${contract.slaDetails}` : ''}
               </li>
@@ -580,7 +573,7 @@ export const SiteProfilePage: React.FC = () => {
                 return (
                   <tr key={item.id}>
                     <td>{item.name}</td>
-                    <td style={low ? { color: '#dc2626', fontWeight: 600 } : undefined}>
+                    <td style={low ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
                       {item.quantity} {item.unit}
                     </td>
                     <td>{item.minThreshold}</td>

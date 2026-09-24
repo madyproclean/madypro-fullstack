@@ -16,6 +16,7 @@ import { InterventionViewModal } from '../../components/interventions/Interventi
 import { GabaritsPage } from '../interventions/GabaritsPage';
 import { useSupervisedSiteIds } from '../../hooks/useSupervisedSiteIds';
 import { formatDateTime } from '../../utils/datetime';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 const todayLocal = () => {
   const d = new Date();
@@ -115,23 +116,24 @@ export const SupervisorInterventionsPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Supervision</span>
-        <h2>Interventions</h2>
-        <p>Gestion des interventions (planifiées, en cours, terminées) sur vos sites.</p>
-        {tab === 'list' && (
-          <Button
-            type="button"
-            icon={Plus}
-            onClick={() => {
-              setTab('templates');
-              setGabaritCreateSignal((n) => n + 1);
-            }}
-          >
-            Nouvelle intervention
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Interventions"
+        subtitle="Gestion des interventions (planifiées, en cours, terminées) sur vos sites."
+        actions={
+          tab === 'list' && (
+            <Button
+              type="button"
+              icon={Plus}
+              onClick={() => {
+                setTab('templates');
+                setGabaritCreateSignal((n) => n + 1);
+              }}
+            >
+              Nouvelle intervention
+            </Button>
+          )
+        }
+      />
 
       <div className="chips" style={{ margin: '1rem 0' }}>
         <button type="button" className={`chip ${tab === 'list' ? 'chip--selected' : ''}`} onClick={() => setTab('list')}>

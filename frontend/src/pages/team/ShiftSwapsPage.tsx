@@ -5,6 +5,15 @@ import { listShiftSwaps, acceptShiftSwap, rejectShiftSwap } from '../../services
 import { Button } from '../../components/ui/Button';
 import { formatDateTime } from '../../utils/datetime';
 import { Check, X } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Badge, BadgeTone } from '../../components/ui/Badge';
+
+const STATUS_TONES: Record<ShiftSwapRequest['status'], BadgeTone> = {
+  PENDING: 'warning',
+  ACCEPTED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'neutral',
+};
 
 const STATUS_LABELS: Record<ShiftSwapRequest['status'], string> = {
   PENDING: 'En attente',
@@ -53,11 +62,7 @@ export const ShiftSwapsPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>Échanges de shift</h2>
-        <p>Demandes d’échange de mission entre agents.</p>
-      </div>
+      <PageHeader title="Échanges de shift" subtitle="Demandes d’échange de mission entre agents." />
 
       <section className="panel">
         {loading ? (
@@ -87,7 +92,9 @@ export const ShiftSwapsPage: React.FC = () => {
                     <td>{swap.target ? `${swap.target.firstName} ${swap.target.lastName}` : 'Ouvert à tous'}</td>
                     <td>{swap.intervention.date.slice(0, 10)} · {swap.intervention.startTime}-{swap.intervention.endTime}</td>
                     <td>{swap.reason ?? '—'}</td>
-                    <td>{STATUS_LABELS[swap.status]}</td>
+                    <td>
+                      <Badge tone={STATUS_TONES[swap.status]}>{STATUS_LABELS[swap.status]}</Badge>
+                    </td>
                     <td>{formatDateTime(swap.createdAt)}</td>
                     <td style={{ display: 'flex', gap: '0.4rem' }}>
                       {swap.status === 'PENDING' && (

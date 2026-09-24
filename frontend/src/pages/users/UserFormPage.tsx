@@ -25,6 +25,7 @@ import { Certification, EmployeeDocument } from '../../types/team';
 import { useAuthContext } from '../../context/AuthContext';
 import { env } from '../../config/env';
 import { Save, Trash2, Plus } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 type AddressSuggestion = {
   id: string;
@@ -269,11 +270,10 @@ export const UserFormPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
-        <span className="pill">Équipes</span>
-        <h2>{isEdit ? 'Modifier un utilisateur' : 'Créer un utilisateur'}</h2>
-        <p>Gérez les accès et coordonnées des collaborateurs Madypro Clean.</p>
-      </div>
+      <PageHeader
+        title={isEdit ? 'Modifier un utilisateur' : 'Créer un utilisateur'}
+        subtitle="Gérez les accès et coordonnées des collaborateurs Madypro Clean."
+      />
       {error && <p className="form-error">{error}</p>}
       <UserForm
         value={form}
@@ -366,7 +366,7 @@ export const UserFormPage: React.FC = () => {
                   return (
                     <tr key={cert.id}>
                       <td>{cert.label}</td>
-                      <td style={expiringSoon ? { color: '#dc2626', fontWeight: 600 } : undefined}>
+                      <td style={expiringSoon ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
                         {cert.expiresAt ? cert.expiresAt.slice(0, 10) : '—'}
                       </td>
                       <td>
