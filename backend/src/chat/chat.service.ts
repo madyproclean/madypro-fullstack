@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class ChatService {
@@ -9,10 +10,43 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly usersService: UsersService,
+    private readonly realtime: RealtimeService,
   ) {}
 
-  async listThreads() {
-    const agents = this.usersService.findAll({ role: 'AGENT', pageSize: 500 }).items;
+  /**
+   * Périmètre d'un superviseur : les agents déjà affectés à au moins une
+   * intervention sur l'un de ses sites (aucune fenêtre de dates — un superviseur
+   * ne doit jamais perdre l'accès à une conversation existante). `null` = pas de
+   * restriction (admin).
+   */
+  private async getScopedAgentIds(viewerId: string, viewerRole: string): Promise<Set<string> | null> {
+    if (viewerRole?.toUpperCase() !== 'SUPERVISOR') return null;
+    const siteLinks = await this.prisma.siteSupervisor.findMany({
+      where: { userId: viewerId },
+      select: { siteId: true },
+    });
+    const siteIds = siteLinks.map((link) => link.siteId);
+    if (!siteIds.length) return new Set();
+    const assignments = await this.prisma.interventionAssignment.findMany({
+      where: { intervention: { siteId: { in: siteIds } } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return new Set(assignments.map((a) => a.userId));
+  }
+
+  async assertThreadAccessible(threadUserId: string, viewerId: string, viewerRole: string) {
+    const scopedAgentIds = await this.getScopedAgentIds(viewerId, viewerRole);
+    if (scopedAgentIds && !scopedAgentIds.has(threadUserId)) {
+      throw new ForbiddenException("Cet agent n'est pas dans votre périmètre de supervision");
+    }
+  }
+
+  async listThreads(viewerId: string, viewerRole: string) {
+    const scopedAgentIds = await this.getScopedAgentIds(viewerId, viewerRole);
+    const agents = this.usersService
+      .findAll({ role: 'AGENT', pageSize: 500 })
+      .items.filter((agent) => !scopedAgentIds || scopedAgentIds.has(agent.id));
     const threads = await Promise.all(
       agents.map(async (agent) => {
         const [lastMessage, unreadCount] = await Promise.all([
@@ -54,6 +88,11 @@ export class ChatService {
         data: { path: 'AgentChat' },
       });
     }
+    // Diffusé aux clients web (admin/superviseur) connectés au flux temps réel, pour que
+    // la messagerie affiche les nouveaux messages sans rechargement manuel de la page —
+    // il n'existe pas d'audience de notification push pour les comptes staff (seuls les
+    // agents ont un token push mobile), le flux SSE est donc le seul canal de mise à jour live.
+    this.realtime.broadcast('chat.message', { threadUserId, senderId, id: message.id });
     return message;
   }
 
