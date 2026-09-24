@@ -20,6 +20,7 @@ type SiteView = SiteEntity & {
 };
 
 type SiteFilters = {
+  active?: boolean;
   page?: number;
   pageSize?: number;
 };
@@ -100,14 +101,16 @@ export class SitesService implements OnModuleInit {
   async findAll(filters: SiteFilters = { page: 1, pageSize: 20 }) {
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 20;
+    const where = filters.active === undefined ? {} : { active: filters.active };
     const [records, total] = await Promise.all([
       this.prisma.site.findMany({
+        where,
         include: { supervisors: true },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.site.count(),
+      this.prisma.site.count({ where }),
     ]);
     const items = records.map((record) => this.present(this.mapRecord(record)));
     return { items, total, page, pageSize };

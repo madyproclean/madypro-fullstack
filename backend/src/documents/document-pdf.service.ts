@@ -156,7 +156,7 @@ export class DocumentPdfService {
       doc.lineWidth(1);
 
       // --- Émetteur / Facturé à ---
-      let blockY = headerBottom + 20;
+      const blockY = headerBottom + 20;
       this.drawPartyBlock(doc, 'ÉMETTEUR', company.legalName || 'Mady Proclean', company.address, null, PAGE_LEFT, blockY);
       const partyBottom = this.drawPartyBlock(
         doc,

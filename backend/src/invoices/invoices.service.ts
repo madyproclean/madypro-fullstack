@@ -16,6 +16,18 @@ import { RecordInvoicePaymentDto } from './dto/record-invoice-payment.dto';
 const INCLUDE = { site: { select: { name: true } }, lineItems: { orderBy: { order: 'asc' as const } } };
 const OVERDUE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// PAID n'est volontairement pas atteignable depuis ce endpoint générique : seul `recordPayment`
+// (qui calcule réellement le solde) peut faire passer une facture à PAID. PAID est un état terminal :
+// l'app n'a aucun mécanisme d'avoir/remboursement, donc annuler une facture déjà soldée laisserait un
+// paiement réellement encaissé associé à un document "annulé" — plus risqué comptablement que
+// d'interdire la transition. Une correction doit passer par un vrai avoir (hors périmètre actuel).
+const INVOICE_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+  DRAFT: ['SENT', 'CANCELLED'],
+  SENT: ['CANCELLED'],
+  PAID: [],
+  CANCELLED: [],
+};
+
 @Injectable()
 export class InvoicesService implements OnModuleInit {
   private readonly logger = new Logger(InvoicesService.name);
@@ -184,6 +196,11 @@ export class InvoicesService implements OnModuleInit {
     if (!existing) {
       throw new NotFoundException('Facture introuvable');
     }
+    if (existing.status !== status && !INVOICE_TRANSITIONS[existing.status].includes(status)) {
+      throw new BadRequestException(
+        `Transition de statut invalide : ${existing.status} → ${status}`,
+      );
+    }
     const invoice = await this.prisma.invoice.update({ where: { id }, data: { status }, include: INCLUDE });
     this.audit.record({ actorId, action: 'UPDATE_INVOICE', entityType: 'invoice', entityId: invoice.id, details: `status:${status}` });
     return this.present(invoice);
@@ -257,6 +274,11 @@ export class InvoicesService implements OnModuleInit {
     if (!invoice) {
       throw new NotFoundException('Facture introuvable');
     }
+    if (invoice.status === 'DRAFT' || invoice.status === 'CANCELLED') {
+      throw new BadRequestException(
+        `Impossible d'enregistrer un paiement sur une facture ${invoice.status === 'DRAFT' ? 'en brouillon' : 'annulée'}`,
+      );
+    }
     const totals = computeTotals(invoice.lineItems);
     const isFullyPaid = dto.amountPaidHT >= totals.totalTTC;
     const updated = await this.prisma.invoice.update({
@@ -265,7 +287,9 @@ export class InvoicesService implements OnModuleInit {
         amountPaidHT: dto.amountPaidHT,
         paymentMethod: dto.paymentMethod,
         paidAt: isFullyPaid ? new Date(dto.paidAt ?? Date.now()) : null,
-        status: isFullyPaid ? 'PAID' : invoice.status === 'DRAFT' ? 'SENT' : invoice.status,
+        // Un montant qui ne solde plus la facture repasse toujours par SENT — jamais de statut PAID
+        // fantôme si le montant réellement enregistré est repassé sous le total dû.
+        status: isFullyPaid ? 'PAID' : 'SENT',
       },
       include: INCLUDE,
     });

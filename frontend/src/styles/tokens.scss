@@ -1,0 +1,88 @@
+// Source unique des tokens de design. Toute couleur/espacement/rayon/police
+// utilisé par les composants doit venir d'ici — ne pas redéfinir de valeurs
+// littérales ailleurs.
+:root {
+  // Polices
+  --font-body: 'Cabin', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: 'Fjalla One', 'Cabin', sans-serif;
+
+  // Couleurs de base (neutres refroidis pour s'accorder avec le bleu de la marque)
+  --color-ink: #020912;
+  --color-muted: #565656;
+  --color-cream: #f4f8fc;
+  --color-shell: #fbfcfe;
+  --color-sage: #dbe9e0;
+  --color-mist: #e8f5fd;
+  --color-border: #dde5ef;
+
+  // Accent — bleu extrait du logo Mady Proclean
+  --color-accent: #0f98eb;
+  --color-accent-dark: #1b5ca0;
+  --color-focus: var(--color-accent);
+
+  // Couleurs sémantiques (alignées sur .status-chip existant pour rester cohérent visuellement)
+  // Conservées telles quelles : ce sont des conventions de statut (succès/alerte/danger),
+  // pas de l'identité de marque.
+  --color-success: #1f4634;
+  --color-success-bg: #dbe9e0;
+  --color-warning: #9c5a18;
+  --color-warning-bg: #fff2df;
+  --color-info: #0d366e;
+  --color-info-bg: #e3f3fc;
+  --color-danger: #c2410c;
+  --color-danger-bg: #fdece3;
+
+  // Tons de badge KPI — décoratifs/catégoriels (assignés par type de carte stat,
+  // ex. StatCard), distincts des tokens sémantiques ci-dessus qui restent liés
+  // à un sens précis (succès/alerte/info/danger). Alias vers l'existant quand
+  // la teinte coïncide, pour garder une seule source de vérité par couleur.
+  --color-badge-orange: #c2610c;
+  --color-badge-orange-bg: #fdecda;
+  --color-badge-blue: var(--color-accent);
+  --color-badge-blue-bg: var(--color-mist);
+  --color-badge-yellow: #9c7a18;
+  --color-badge-yellow-bg: #fff8df;
+  --color-badge-green: var(--color-success);
+  --color-badge-green-bg: var(--color-success-bg);
+  --color-badge-red: var(--color-danger);
+  --color-badge-red-bg: var(--color-danger-bg);
+
+  // Séries de graphiques (recharts) — reprend les 5 teintes de badge pour que
+  // légendes de graphiques et cartes KPI restent visuellement cohérentes.
+  --chart-series-1: var(--color-badge-blue);
+  --chart-series-2: var(--color-badge-orange);
+  --chart-series-3: var(--color-badge-green);
+  --chart-series-4: var(--color-badge-yellow);
+  --chart-series-5: var(--color-badge-red);
+
+  // Ombres
+  --shadow-soft: 0 25px 45px rgba(2, 9, 18, 0.08);
+  --shadow-pop: 0 12px 24px rgba(2, 9, 18, 0.14);
+
+  // Échelle d'espacement
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  // Rayons
+  --radius-sm: 0.5rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-pill: 999px;
+
+  // Tailles de texte
+  --text-xs: 0.75rem;
+  --text-sm: 0.85rem;
+  --text-base: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+
+  // Transitions
+  --transition-fast: 0.15s ease;
+}

@@ -14,8 +14,9 @@ export class ChatController {
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('threads')
-  listThreads() {
-    return this.chatService.listThreads();
+  listThreads(@Req() req: Request) {
+    const user = req.user as any;
+    return this.chatService.listThreads(user.sub, user.role);
   }
 
   @Get('threads/me')
@@ -37,22 +38,27 @@ export class ChatController {
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('threads/:userId')
-  getThread(@Param('userId') userId: string) {
+  async getThread(@Param('userId') userId: string, @Req() req: Request) {
+    const user = req.user as any;
+    await this.chatService.assertThreadAccessible(userId, user.sub, user.role);
     return this.chatService.getThread(userId);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Post('threads/:userId/messages')
-  sendToAgent(@Param('userId') userId: string, @Body() dto: SendMessageDto, @Req() req: Request) {
+  async sendToAgent(@Param('userId') userId: string, @Body() dto: SendMessageDto, @Req() req: Request) {
     const user = req.user as any;
+    await this.chatService.assertThreadAccessible(userId, user.sub, user.role);
     return this.chatService.sendMessage(userId, user.sub, user.role, dto.body);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch('threads/:userId/read')
-  markThreadRead(@Param('userId') userId: string, @Req() req: Request) {
-    return this.chatService.markRead(userId, (req.user as any)?.sub);
+  async markThreadRead(@Param('userId') userId: string, @Req() req: Request) {
+    const user = req.user as any;
+    await this.chatService.assertThreadAccessible(userId, user.sub, user.role);
+    return this.chatService.markRead(userId, user.sub);
   }
 }
