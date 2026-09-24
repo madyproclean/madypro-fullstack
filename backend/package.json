@@ -8,6 +8,8 @@
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "build": "nest build",
     "test": "jest",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "lint": "eslint \"src/**/*.ts\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node --project tsconfig.seed.json prisma/seed.ts"
@@ -43,15 +45,37 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/jest": "^29.5.5",
     "@types/node": "^20.11.25",
     "@types/node-fetch": "^2.6.4",
     "@types/qrcode": "^1.5.6",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.39.5",
+    "supertest": "^6.3.4",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.70.0"
   },
   "prisma": {
     "seed": "ts-node --project tsconfig.seed.json prisma/seed.ts"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
   }
 }
