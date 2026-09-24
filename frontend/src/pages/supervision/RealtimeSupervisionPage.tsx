@@ -11,6 +11,8 @@ import { Site } from '../../types/site';
 import { Intervention } from '../../types/intervention';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Badge } from '../../components/ui/Badge';
 import { List, Map as MapIcon } from 'lucide-react';
 import { formatDateTime } from '../../utils/datetime';
 import { env } from '../../config/env';
@@ -158,13 +160,9 @@ const PresenceListView: React.FC = () => {
                           : '—'}
                       </td>
                       <td>
-                        <span
-                          className={`status-chip ${
-                            isPresent ? (isLate ? 'status-chip--warning' : 'status-chip--success') : 'status-chip--info'
-                          }`}
-                        >
+                        <Badge tone={isPresent ? (isLate ? 'warning' : 'success') : 'info'}>
                           {isPresent ? (isLate ? 'En retard' : 'Présent') : 'Absent / non pointé'}
-                        </span>
+                        </Badge>
                       </td>
                     </tr>
                   );
@@ -185,23 +183,83 @@ const PresenceListView: React.FC = () => {
   );
 };
 
+const MAP_COLORS = { agent: '#0f98eb', siteActive: '#1f7a4d', siteIdle: '#8a94a6', ink: '#020912' };
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('');
+
+// Contenu de popup construit en DOM (pas de setHTML) : les noms viennent de la base
+const popupContent = (title: string, lines: string[]) => {
+  const root = document.createElement('div');
+  const strong = document.createElement('strong');
+  strong.textContent = title;
+  root.appendChild(strong);
+  lines.forEach((line) => {
+    const div = document.createElement('div');
+    div.textContent = line;
+    root.appendChild(div);
+  });
+  return root;
+};
+
+// Étiquette toujours visible sous (ou au-dessus d'un) repère
+const mapLabel = (text: string, position: 'above' | 'below') => {
+  const label = document.createElement('div');
+  label.textContent = text;
+  Object.assign(label.style, {
+    position: 'absolute',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    [position === 'above' ? 'bottom' : 'top']: 'calc(100% + 4px)',
+    whiteSpace: 'nowrap',
+    background: '#fff',
+    color: MAP_COLORS.ink,
+    fontSize: '12px',
+    fontWeight: '600',
+    lineHeight: '1.2',
+    padding: '3px 8px',
+    borderRadius: '999px',
+    boxShadow: '0 1px 4px rgba(2, 9, 18, 0.25)',
+    pointerEvents: 'none',
+  });
+  return label;
+};
+
 const LiveMapView: React.FC = () => {
-  const { token, notify } = useAuthContext();
+  const { token, user, notify } = useAuthContext();
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
+  const idleLabels = useRef<HTMLDivElement[]>([]);
+  const hasFitted = useRef(false);
   const [entries, setEntries] = useState<LiveMapEntry[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Noms des sites sans agent : masqués en vue d'ensemble pour éviter les chevauchements
+  const updateIdleLabels = () => {
+    const show = (map.current?.getZoom() ?? 0) >= 11;
+    idleLabels.current.forEach((label) => {
+      label.style.display = show ? 'block' : 'none';
+    });
+  };
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
     mapboxgl.accessToken = env.mapboxToken;
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: 'mapbox://styles/mapbox/light-v11',
       center: [2.3522, 48.8566],
       zoom: 10,
     });
+    map.current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+    map.current.on('zoomend', updateIdleLabels);
     return () => {
       map.current?.remove();
       map.current = null;
@@ -225,38 +283,132 @@ const LiveMapView: React.FC = () => {
   }, [token, notify]);
 
   useEffect(() => {
+    if (!token) return;
+    listSites(token, { pageSize: 200 })
+      .then((res) => setSites(res.items))
+      .catch(() => setSites([]));
+  }, [token]);
+
+  // Superviseur : uniquement ses sites (même règle que la vue liste)
+  const visibleSites = useMemo(() => {
+    const isSupervisor = user?.role?.toUpperCase() === 'SUPERVISOR';
+    return sites.filter(
+      (site) =>
+        site.active &&
+        site.latitude != null &&
+        site.longitude != null &&
+        (!isSupervisor || site.supervisorIds?.includes(user!.id)),
+    );
+  }, [sites, user]);
+
+  useEffect(() => {
     if (!map.current) return;
     markers.current.forEach((marker) => marker.remove());
     markers.current = [];
-    const withCoords = entries.filter((e) => e.latitude != null && e.longitude != null);
-    withCoords.forEach((entry) => {
+    idleLabels.current = [];
+    const bounds = new mapboxgl.LngLatBounds();
+
+    const agentsBySite = new Map<string, LiveMapEntry[]>();
+    entries.forEach((entry) => agentsBySite.set(entry.siteId, [...(agentsBySite.get(entry.siteId) ?? []), entry]));
+
+    visibleSites.forEach((site) => {
+      const onSite = agentsBySite.get(site.id) ?? [];
+      const color = onSite.length ? MAP_COLORS.siteActive : MAP_COLORS.siteIdle;
       const el = document.createElement('div');
-      el.style.width = '14px';
-      el.style.height = '14px';
-      el.style.borderRadius = '50%';
-      el.style.background = '#0f98eb';
-      el.style.border = '2px solid #fff';
-      el.style.boxShadow = '0 0 0 2px rgba(15,152,235,0.35)';
-      const popup = new mapboxgl.Popup({ offset: 16 }).setHTML(
-        `<strong>${entry.agentName}</strong><br/>${entry.siteName}<br/><small>${new Date(entry.lastSeenAt).toLocaleTimeString('fr-FR')}</small>`,
+      Object.assign(el.style, {
+        width: '18px',
+        height: '18px',
+        borderRadius: '50%',
+        background: color,
+        border: '3px solid #fff',
+        boxShadow: '0 1px 5px rgba(2, 9, 18, 0.4)',
+        cursor: 'pointer',
+      });
+      const label = mapLabel(onSite.length ? `${site.name} · ${onSite.length} en mission` : site.name, 'above');
+      if (!onSite.length) {
+        idleLabels.current.push(label);
+        el.addEventListener('mouseenter', () => { label.style.display = 'block'; });
+        el.addEventListener('mouseleave', () => { label.style.display = (map.current?.getZoom() ?? 0) >= 11 ? 'block' : 'none'; });
+      } else {
+        el.style.zIndex = '2';
+      }
+      el.appendChild(label);
+      const popup = new mapboxgl.Popup({ offset: 18 }).setDOMContent(
+        popupContent(site.name, [site.address, onSite.length ? onSite.map((a) => a.agentName).join(', ') : 'Aucun agent en mission']),
       );
-      const marker = new mapboxgl.Marker(el)
-        .setLngLat([entry.longitude as number, entry.latitude as number])
-        .setPopup(popup)
-        .addTo(map.current as mapboxgl.Map);
-      markers.current.push(marker);
+      markers.current.push(
+        new mapboxgl.Marker(el).setLngLat([site.longitude as number, site.latitude as number]).setPopup(popup).addTo(map.current as mapboxgl.Map),
+      );
+      bounds.extend([site.longitude as number, site.latitude as number]);
     });
-    if (withCoords.length > 0) {
-      const bounds = new mapboxgl.LngLatBounds();
-      withCoords.forEach((entry) => bounds.extend([entry.longitude as number, entry.latitude as number]));
-      map.current.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 500 });
+
+    // Agents d'un même site : alignés côte à côte sous l'épingle pour ne pas se superposer
+    const withCoords = entries.filter((e) => e.latitude != null && e.longitude != null);
+    const groups = new Map<string, LiveMapEntry[]>();
+    withCoords.forEach((entry) => groups.set(entry.siteId, [...(groups.get(entry.siteId) ?? []), entry]));
+    groups.forEach((group) => {
+      group.forEach((entry, index) => {
+        const dx = Math.round((index - (group.length - 1) / 2) * 84);
+        const el = document.createElement('div');
+        Object.assign(el.style, {
+          width: '34px',
+          height: '34px',
+          borderRadius: '50%',
+          background: MAP_COLORS.agent,
+          border: '3px solid #fff',
+          boxShadow: '0 2px 8px rgba(2, 9, 18, 0.45)',
+          color: '#fff',
+          fontSize: '13px',
+          fontWeight: '700',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+        });
+        el.textContent = initials(entry.agentName);
+        el.appendChild(mapLabel(entry.agentName.split(/\s+/)[0], 'below'));
+        const popup = new mapboxgl.Popup({ offset: 22 }).setDOMContent(
+          popupContent(entry.agentName, [entry.siteName, `Dernière position : ${new Date(entry.lastSeenAt).toLocaleTimeString('fr-FR')}`]),
+        );
+        markers.current.push(
+          new mapboxgl.Marker({ element: el, offset: [dx, 34] })
+            .setLngLat([entry.longitude as number, entry.latitude as number])
+            .setPopup(popup)
+            .addTo(map.current as mapboxgl.Map),
+        );
+        bounds.extend([entry.longitude as number, entry.latitude as number]);
+      });
+    });
+
+    // Cadrage uniquement au premier affichage : le rafraîchissement (30 s) ne doit pas annuler le zoom de l'utilisateur
+    if (!bounds.isEmpty() && !hasFitted.current) {
+      map.current.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 500 });
+      hasFitted.current = entries.length > 0 || visibleSites.length > 0;
     }
-  }, [entries]);
+    updateIdleLabels();
+  }, [entries, visibleSites]);
+
+  const legendDot = (color: string, size = 12): React.CSSProperties => ({
+    display: 'inline-block',
+    width: size,
+    height: size,
+    borderRadius: '50%',
+    background: color,
+    border: '2px solid #fff',
+    boxShadow: '0 0 0 1px rgba(2, 9, 18, 0.2)',
+    marginRight: 6,
+    verticalAlign: 'middle',
+  });
 
   return (
     <>
       <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-        <div ref={mapContainer} style={{ width: '100%', height: '520px' }} />
+        <div ref={mapContainer} style={{ width: '100%', height: '560px' }} />
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', marginTop: '0.75rem', fontSize: '0.875rem', color: 'var(--color-muted)' }}>
+        <span><span style={legendDot(MAP_COLORS.agent, 16)} />Agent en mission</span>
+        <span><span style={legendDot(MAP_COLORS.siteActive)} />Site avec agents en mission</span>
+        <span><span style={legendDot(MAP_COLORS.siteIdle)} />Site sans agent en ce moment</span>
       </div>
       <div className="panel" style={{ marginTop: '1rem' }}>
         <h3>Agents en mission {loading ? '…' : `(${entries.length})`}</h3>
@@ -299,11 +451,10 @@ export const RealtimeSupervisionPage: React.FC = () => {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <span className="pill">Supervision</span>
-        <h2>Présence &amp; carte temps réel</h2>
-        <p>Suivi des agents en temps réel : liste des pointages ou position sur la carte.</p>
-      </div>
+      <PageHeader
+        title="Présence & carte temps réel"
+        subtitle="Suivi des agents en temps réel : liste des pointages ou position sur la carte."
+      />
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
         <Button type="button" variant={view === 'liste' ? 'primary' : 'ghost'} icon={List} onClick={() => setView('liste')}>
