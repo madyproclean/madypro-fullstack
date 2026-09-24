@@ -15,8 +15,10 @@ type AbsenceFilters = {
   status?: AbsenceStatus | 'all';
   type?: AbsenceType | 'all';
   userId?: string;
+  siteId?: string;
   startDate?: string;
   endDate?: string;
+  manual?: boolean;
   page?: number;
   pageSize?: number;
 };
@@ -112,10 +114,40 @@ export class AbsencesService {
     };
   }
 
+  /**
+   * Périmètre d'un superviseur : les agents déjà affectés à au moins une intervention sur l'un de
+   * ses sites (aucune fenêtre de dates — cohérent avec le même calcul utilisé pour la messagerie).
+   * `null` = pas de restriction (admin).
+   */
+  private async getScopedAgentIds(viewerId: string, viewerRole?: string): Promise<Set<string> | null> {
+    if (viewerRole?.toString().trim().toUpperCase() !== 'SUPERVISOR') return null;
+    const siteLinks = await this.prisma.siteSupervisor.findMany({
+      where: { userId: viewerId },
+      select: { siteId: true },
+    });
+    const siteIds = siteLinks.map((link) => link.siteId);
+    if (!siteIds.length) return new Set();
+    const assignments = await this.prisma.interventionAssignment.findMany({
+      where: { intervention: { siteId: { in: siteIds } } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return new Set(assignments.map((a) => a.userId));
+  }
+
+  async assertAgentInScope(agentUserId: string, viewer?: { id?: string; role?: string }) {
+    const scoped = await this.getScopedAgentIds(viewer?.id ?? '', viewer?.role);
+    if (scoped && !scoped.has(agentUserId)) {
+      throw new UnauthorizedException("Cet agent n'est pas dans votre périmètre de supervision");
+    }
+  }
+
   async list(filters: AbsenceFilters = {}, viewer?: { id?: string; role?: string }) {
     const where: Prisma.AbsenceWhereInput = {};
     if (filters.status && filters.status !== 'all') where.status = filters.status;
     if (filters.type && filters.type !== 'all') where.type = filters.type;
+    if (filters.manual) where.manual = true;
+    if (filters.siteId) where.siteId = filters.siteId;
     const role = viewer?.role?.toString().trim().toUpperCase();
     if (role === 'AGENT') {
       if (!viewer?.id) {
@@ -124,6 +156,15 @@ export class AbsencesService {
       where.userId = viewer.id;
     } else if (filters.userId) {
       where.userId = filters.userId;
+    }
+    const scopedAgentIds = await this.getScopedAgentIds(viewer?.id ?? '', role);
+    if (scopedAgentIds) {
+      if (filters.userId && !scopedAgentIds.has(filters.userId)) {
+        // Agent demandé hors périmètre : ne rien renvoyer plutôt que de laisser passer le filtre tel quel.
+        where.userId = '__none__';
+      } else if (!filters.userId) {
+        where.userId = { in: Array.from(scopedAgentIds) };
+      }
     }
     if (filters.startDate) {
       where.to = { gte: this.toDateOnly(filters.startDate) };
@@ -154,11 +195,12 @@ export class AbsencesService {
     };
   }
 
-  async detail(id: string) {
+  async detail(id: string, viewer?: { id?: string; role?: string }) {
     const record = await this.prisma.absence.findUnique({ where: { id } });
     if (!record) {
       throw new NotFoundException('Absence introuvable');
     }
+    await this.assertAgentInScope(record.userId, viewer);
     return this.toView(this.toEntity(record));
   }
 
@@ -190,6 +232,23 @@ export class AbsencesService {
       update: { allocatedDays },
       create: { userId, year, allocatedDays },
     });
+  }
+
+  private async checkOverlap(userId: string, fromDate: Date, toDate: Date, excludeId?: string) {
+    const overlapping = await this.prisma.absence.findFirst({
+      where: {
+        userId,
+        status: { not: 'REJECTED' },
+        from: { lte: toDate },
+        to: { gte: fromDate },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+    });
+    if (overlapping) {
+      throw new BadRequestException(
+        `Une absence existe déjà pour cet agent du ${overlapping.from.toISOString().slice(0, 10)} au ${overlapping.to.toISOString().slice(0, 10)}`,
+      );
+    }
   }
 
   private async checkBlockedPeriod(fromDate: Date, toDate: Date) {
@@ -227,12 +286,16 @@ export class AbsencesService {
     if (!data.userId) {
       throw new BadRequestException('userId requis');
     }
+    if (!this.usersService.findOne(data.userId)) {
+      throw new NotFoundException('Agent introuvable');
+    }
     const fromDate = this.toDateOnly(data.from);
     const toDate = this.toDateOnly(data.to);
     if (fromDate > toDate) {
       throw new BadRequestException('La date de début doit être avant la date de fin');
     }
     await this.checkBlockedPeriod(fromDate, toDate);
+    await this.checkOverlap(data.userId, fromDate, toDate);
 
     const duration = this.durationInDays(fromDate, toDate);
     const requiresSecondApproval = duration > 5;
@@ -274,16 +337,20 @@ export class AbsencesService {
     return this.toView(this.toEntity(record));
   }
 
-  async approveLevel1(id: string, approverId: string) {
+  async approveLevel1(id: string, approverId: string, viewer?: { id?: string; role?: string }) {
     const absence = await this.prisma.absence.findUnique({ where: { id } });
     if (!absence) {
       throw new NotFoundException('Absence introuvable');
     }
+    await this.assertAgentInScope(absence.userId, viewer);
     if (!absence.requiresSecondApproval) {
       throw new BadRequestException("Cette absence ne nécessite pas de validation à deux niveaux");
     }
     if (absence.status !== 'PENDING') {
       throw new BadRequestException('Cette absence a déjà été traitée');
+    }
+    if (absence.level1ApprovedBy) {
+      throw new BadRequestException('Cette absence a déjà reçu une première validation');
     }
     const record = await this.prisma.absence.update({
       where: { id },
@@ -292,12 +359,18 @@ export class AbsencesService {
     return this.toView(this.toEntity(record));
   }
 
-  async createManual(data: CreateManualAbsenceDto) {
+  async createManual(data: CreateManualAbsenceDto, actor?: { id?: string; role?: string }) {
+    if (!this.usersService.findOne(data.userId)) {
+      throw new NotFoundException('Agent introuvable');
+    }
     const fromDate = this.toDateOnly(data.from);
     const toDate = this.toDateOnly(data.to);
     if (fromDate > toDate) {
       throw new BadRequestException('La date de début doit être avant la date de fin');
     }
+    await this.checkBlockedPeriod(fromDate, toDate);
+    await this.checkOverlap(data.userId, fromDate, toDate);
+    const actorLabel = actor?.role ?? 'ADMIN';
     const record = await this.prisma.absence.create({
       data: {
         userId: data.userId,
@@ -310,12 +383,12 @@ export class AbsencesService {
         note: data.note,
         attachment: data.attachment,
         manual: true,
-        createdBy: 'ADMIN',
-        validatedBy: 'ADMIN',
+        createdBy: actorLabel,
+        validatedBy: actorLabel,
       },
     });
     this.auditService.record({
-      actorId: 'admin@madyproclean.com',
+      actorId: actor?.id ?? 'admin@madyproclean.com',
       action: 'CREATE_ABSENCE',
       entityType: 'absence',
       entityId: record.id,
@@ -324,12 +397,16 @@ export class AbsencesService {
     return this.toView(this.toEntity(record));
   }
 
-  async updateStatus(id: string, dto: UpdateAbsenceStatusDto) {
+  async updateStatus(id: string, dto: UpdateAbsenceStatusDto, viewer?: { id?: string; role?: string }) {
+    const existing = await this.prisma.absence.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Absence introuvable');
+    }
+    await this.assertAgentInScope(existing.userId, viewer);
+    if (existing.status !== 'PENDING') {
+      throw new BadRequestException(`Cette absence a déjà été traitée (statut actuel : ${existing.status})`);
+    }
     if (dto.status === 'APPROVED') {
-      const existing = await this.prisma.absence.findUnique({ where: { id } });
-      if (!existing) {
-        throw new NotFoundException('Absence introuvable');
-      }
       if (existing.requiresSecondApproval && !existing.level1ApprovedBy) {
         throw new BadRequestException(
           "Cette absence nécessite une première validation (superviseur) avant l'approbation finale",
@@ -371,11 +448,12 @@ export class AbsencesService {
    * des agents disponibles (ni déjà affectés, ni en conflit d'horaire,
    * ni eux-mêmes absents) pour remplacer l'agent absent.
    */
-  async getReplacementSuggestions(id: string) {
+  async getReplacementSuggestions(id: string, viewer?: { id?: string; role?: string }) {
     const absence = await this.prisma.absence.findUnique({ where: { id } });
     if (!absence) {
       throw new NotFoundException('Absence introuvable');
     }
+    await this.assertAgentInScope(absence.userId, viewer);
     if (absence.status !== 'APPROVED') {
       return { absenceId: id, interventions: [] };
     }

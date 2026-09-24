@@ -22,6 +22,8 @@ export class AbsencesController {
     @Query('agentId') userId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('manual') manual?: string,
+    @Query('siteId') siteId?: string,
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '20',
   ) {
@@ -34,6 +36,8 @@ export class AbsencesController {
         userId: enforcedUserId,
         startDate,
         endDate,
+        manual: manual === 'true',
+        siteId,
         page: parseInt(page, 10) || 1,
         pageSize: parseInt(pageSize, 10) || 20,
       },
@@ -70,7 +74,7 @@ export class AbsencesController {
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get(':id')
   async detail(@Req() req: any, @Param('id') id: string) {
-    const absence = await this.service.detail(id);
+    const absence = await this.service.detail(id, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
     if (req.user?.role === 'AGENT' && absence.agent.id !== req.user.userId) {
       throw new ForbiddenException('Accès refusé');
     }
@@ -90,26 +94,26 @@ export class AbsencesController {
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Post('manual')
-  createManual(@Body() body: CreateManualAbsenceDto) {
-    return this.service.createManual(body);
+  createManual(@Req() req: any, @Body() body: CreateManualAbsenceDto) {
+    return this.service.createManual(body, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() body: UpdateAbsenceStatusDto) {
-    return this.service.updateStatus(id, body);
+  updateStatus(@Req() req: any, @Param('id') id: string, @Body() body: UpdateAbsenceStatusDto) {
+    return this.service.updateStatus(id, body, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Post(':id/approve-level1')
   approveLevel1(@Param('id') id: string, @Req() req: any) {
-    return this.service.approveLevel1(id, req.user?.userId ?? req.user?.sub);
+    return this.service.approveLevel1(id, req.user?.userId ?? req.user?.sub, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Get(':id/replacement-suggestions')
-  getReplacementSuggestions(@Param('id') id: string) {
-    return this.service.getReplacementSuggestions(id);
+  getReplacementSuggestions(@Req() req: any, @Param('id') id: string) {
+    return this.service.getReplacementSuggestions(id, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
