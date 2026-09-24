@@ -55,5 +55,6 @@ Fichiers locaux uniquement (jamais commités)
 /DESIGN_SYSTEM.md
 /design-tokens.json
 /logo.png
+/presentation-client/
 .vercel
 .env*
