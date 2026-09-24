@@ -1,4 +1,5 @@
-import { IsArray, IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsDateString, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { LineItemDto } from '../../documents/dto/line-item.dto';
 
 export class CreateQuoteDto {
@@ -36,5 +37,7 @@ export class CreateQuoteDto {
   documentUrl?: string;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
   lineItems!: LineItemDto[];
 }
