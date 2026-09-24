@@ -101,10 +101,17 @@ resource "aws_instance" "madypro_prod" {
 }
 
 resource "aws_eip" "madypro_prod" {
-  domain   = "vpc"
-  instance = aws_instance.madypro_prod.id
+  domain = "vpc"
 
   tags = {
     Name = "${var.project}-eip"
   }
+}
+
+# Association séparée de l'EIP : permet de terminer/recréer l'instance
+# (terraform destroy -target=aws_instance.madypro_prod puis apply) sans
+# perdre l'IP fixe entre deux sessions de travail.
+resource "aws_eip_association" "madypro_prod" {
+  instance_id   = aws_instance.madypro_prod.id
+  allocation_id = aws_eip.madypro_prod.id
 }
