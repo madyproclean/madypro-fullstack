@@ -19,10 +19,12 @@ export class SitesController {
   @Roles('ADMIN', 'SUPERVISOR')
   @Get()
   findAll(
+    @Query('active') active?: string,
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '20',
   ) {
     return this.service.findAll({
+      active: active === undefined ? undefined : active === 'true',
       page: parseInt(page, 10) || 1,
       pageSize: parseInt(pageSize, 10) || 20,
     });
