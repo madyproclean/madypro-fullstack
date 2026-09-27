@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from
 import { Site } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as QRCode from 'qrcode';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SiteEntity } from './entities/site.entity';
 import { CreateSiteDto } from './dto/create-site.dto';
@@ -21,6 +22,8 @@ type SiteView = SiteEntity & {
 
 type SiteFilters = {
   active?: boolean;
+  /** Restreint aux sites donnés (périmètre superviseur). */
+  siteIds?: string[] | null;
   page?: number;
   pageSize?: number;
 };
@@ -101,7 +104,8 @@ export class SitesService implements OnModuleInit {
   async findAll(filters: SiteFilters = { page: 1, pageSize: 20 }) {
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 20;
-    const where = filters.active === undefined ? {} : { active: filters.active };
+    const where: Prisma.SiteWhereInput = filters.active === undefined ? {} : { active: filters.active };
+    if (filters.siteIds) where.id = { in: filters.siteIds };
     const [records, total] = await Promise.all([
       this.prisma.site.findMany({
         where,
@@ -389,11 +393,11 @@ export class SitesService implements OnModuleInit {
     return this.prisma.siteContract.findMany({ where: { siteId }, orderBy: { endDate: 'asc' } });
   }
 
-  findExpiringContracts(days = 30) {
+  findExpiringContracts(days = 30, siteIds: string[] | null = null) {
     const now = new Date();
     const horizon = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
     return this.prisma.siteContract.findMany({
-      where: { endDate: { gte: now, lte: horizon } },
+      where: { endDate: { gte: now, lte: horizon }, ...(siteIds ? { siteId: { in: siteIds } } : {}) },
       orderBy: { endDate: 'asc' },
       include: { site: { select: { id: true, name: true } } },
     });

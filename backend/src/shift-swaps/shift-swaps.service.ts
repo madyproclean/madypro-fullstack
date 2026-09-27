@@ -30,9 +30,12 @@ export class ShiftSwapsService {
       .map((u) => ({ id: u.id, firstName: u.firstName, lastName: u.lastName }));
   }
 
-  findAll(userId?: string) {
+  /** `siteIds` restreint aux échanges portant sur les interventions de ces sites (superviseur). */
+  findAll(userId?: string, siteIds: string[] | null = null) {
     return this.prisma.shiftSwapRequest.findMany({
-      where: userId
+      where: siteIds
+        ? { intervention: { siteId: { in: siteIds } }, ...(userId ? { OR: [{ requesterId: userId }, { targetUserId: userId }] } : {}) }
+        : userId
         ? {
             OR: [
               { requesterId: userId },

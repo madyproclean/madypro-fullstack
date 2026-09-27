@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
@@ -11,39 +12,18 @@ export class ChatService {
     private readonly notifications: NotificationsService,
     private readonly usersService: UsersService,
     private readonly realtime: RealtimeService,
+    private readonly scope: SupervisorScopeService,
   ) {}
 
-  /**
-   * Périmètre d'un superviseur : les agents déjà affectés à au moins une
-   * intervention sur l'un de ses sites (aucune fenêtre de dates — un superviseur
-   * ne doit jamais perdre l'accès à une conversation existante). `null` = pas de
-   * restriction (admin).
-   */
-  private async getScopedAgentIds(viewerId: string, viewerRole: string): Promise<Set<string> | null> {
-    if (viewerRole?.toUpperCase() !== 'SUPERVISOR') return null;
-    const siteLinks = await this.prisma.siteSupervisor.findMany({
-      where: { userId: viewerId },
-      select: { siteId: true },
-    });
-    const siteIds = siteLinks.map((link) => link.siteId);
-    if (!siteIds.length) return new Set();
-    const assignments = await this.prisma.interventionAssignment.findMany({
-      where: { intervention: { siteId: { in: siteIds } } },
-      select: { userId: true },
-      distinct: ['userId'],
-    });
-    return new Set(assignments.map((a) => a.userId));
-  }
-
   async assertThreadAccessible(threadUserId: string, viewerId: string, viewerRole: string) {
-    const scopedAgentIds = await this.getScopedAgentIds(viewerId, viewerRole);
+    const scopedAgentIds = await this.scope.agentIds({ id: viewerId, role: viewerRole });
     if (scopedAgentIds && !scopedAgentIds.has(threadUserId)) {
       throw new ForbiddenException("Cet agent n'est pas dans votre périmètre de supervision");
     }
   }
 
   async listThreads(viewerId: string, viewerRole: string) {
-    const scopedAgentIds = await this.getScopedAgentIds(viewerId, viewerRole);
+    const scopedAgentIds = await this.scope.agentIds({ id: viewerId, role: viewerRole });
     const agents = this.usersService
       .findAll({ role: 'AGENT', pageSize: 500 })
       .items.filter((agent) => !scopedAgentIds || scopedAgentIds.has(agent.id));
@@ -78,7 +58,15 @@ export class ChatService {
       data: { threadUserId, senderId, body },
     });
     const isFromAgent = senderRole === 'AGENT';
-    if (!isFromAgent) {
+    if (isFromAgent) {
+      const agentName = this.usersService.findOne(senderId)?.name ?? 'Un agent';
+      await this.notifications.notifyAgentSupervisors(senderId, {
+        title: `Message de ${agentName}`,
+        message: body.length > 120 ? `${body.slice(0, 117)}...` : body,
+        category: 'chat',
+        data: { threadUserId },
+      });
+    } else {
       await this.notifications.send({
         title: 'Nouveau message',
         message: body.length > 120 ? `${body.slice(0, 117)}...` : body,

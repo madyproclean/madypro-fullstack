@@ -16,6 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 import { InterventionsModule } from './interventions/interventions.module';
 import { PrismaModule } from './database/prisma.module';
+import { SupervisorScopeModule } from './common/supervisor-scope/supervisor-scope.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AnomaliesModule } from './anomalies/anomalies.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -42,6 +43,7 @@ import { CategoriesModule } from './categories/categories.module';
       load: [AppConfig, DbConfig, AuthConfig],
     }),
     PrismaModule,
+    SupervisorScopeModule,
     AuthModule,
     UsersModule,
     SitesModule,

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { User } from '../types/user';
 import { setUnauthorizedHandler } from '../services/api/client';
 
@@ -48,12 +48,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const notify = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  // Références stables : de nombreux écrans mettent `notify` dans les dépendances de leurs effets ;
+  // une fonction recréée à chaque rendu relançait le chargement à chaque toast (boucle sur erreur).
+  const notify = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToasts((prev) => [...prev, { id: Date.now(), message, type }]);
-  };
-  const removeToast = (id: number) => {
+  }, []);
+  const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

@@ -25,6 +25,8 @@ type AttendanceFilters = {
   status?: AttendanceStatus | 'all';
   page?: number;
   pageSize?: number;
+  /** Restreint aux pointages des interventions de ces sites (périmètre superviseur). */
+  siteIds?: string[] | null;
 };
 
 type AttendanceView = {
@@ -342,6 +344,7 @@ export class AttendanceService implements OnModuleInit {
     const where: Prisma.AttendanceWhereInput = {};
     if (filters.userId) where.userId = filters.userId;
     if (filters.interventionId) where.interventionId = filters.interventionId;
+    if (filters.siteIds) where.intervention = { siteId: { in: filters.siteIds } };
     if (filters.status && filters.status !== 'all') where.status = filters.status;
     if (filters.startDate || filters.endDate) {
       where.date = {};
@@ -646,6 +649,7 @@ export class AttendanceService implements OnModuleInit {
     this.realtime.broadcast('attendance.checkout', {
       attendanceId: view.id,
       userId: existing.userId,
+      siteId: view.site.id,
       status: view.status,
       checkOutTime: view.checkOutTime,
       date: view.date,
@@ -901,6 +905,15 @@ export class AttendanceService implements OnModuleInit {
         where: { id: intervention.id },
         data: { status: complete ? 'NEEDS_REVIEW' : 'IN_PROGRESS' },
       });
+      if (complete && intervention.status !== 'NEEDS_REVIEW') {
+        const site = await this.prisma.site.findUnique({ where: { id: intervention.siteId }, select: { name: true } });
+        const siteName = site?.name ?? 'Un site';
+        await this.notifications.notifySiteSupervisors([intervention.siteId], {
+          title: 'Intervention à valider',
+          message: `${siteName} : tous les agents ont terminé, l'intervention attend votre validation.`,
+          data: { interventionId: intervention.id },
+        });
+      }
       return;
     }
 
@@ -1044,10 +1057,15 @@ export class AttendanceService implements OnModuleInit {
     return Math.round(R * c);
   }
 
-  async getAnomalies() {
+  async getAnomalies(siteIds: string[] | null = null) {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const attendances = await this.prisma.attendance.findMany({
-      where: { date: { gte: since }, checkInTime: { not: null }, checkOutTime: { not: null } },
+      where: {
+        date: { gte: since },
+        checkInTime: { not: null },
+        checkOutTime: { not: null },
+        ...(siteIds ? { intervention: { siteId: { in: siteIds } } } : {}),
+      },
       include: { user: { select: { firstName: true, lastName: true } }, intervention: { select: { siteId: true, site: { select: { name: true } } } } },
     });
 
@@ -1099,10 +1117,11 @@ export class AttendanceService implements OnModuleInit {
     return anomalies;
   }
 
-  async getLiveMap() {
+  async getLiveMap(siteIds: string[] | null = null) {
     const cutoff = new Date(Date.now() - 30 * 60 * 1000);
     const records = await this.prisma.attendance.findMany({
       where: {
+        ...(siteIds ? { intervention: { siteId: { in: siteIds } } } : {}),
         status: 'PENDING',
         checkInTime: { not: null },
         checkOutTime: null,

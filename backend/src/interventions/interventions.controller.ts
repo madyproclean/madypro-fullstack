@@ -11,6 +11,8 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ApprovalsService, ApprovalActionType } from '../approvals/approvals.service';
+import { SupervisorScopeGuard } from '../common/supervisor-scope/supervisor-scope.guard';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 
 @Controller('interventions')
 export class InterventionsController {
@@ -18,12 +20,20 @@ export class InterventionsController {
     private readonly service: InterventionsService,
     @Inject(forwardRef(() => ApprovalsService))
     private readonly approvals: ApprovalsService,
+    private readonly scope: SupervisorScopeService,
   ) {}
+
+  /** Superviseur : le gabarit doit porter sur l'un de ses sites. */
+  private async assertTemplateInScope(req: Request, templateId: string) {
+    if (!SupervisorScopeService.isSupervisor(req.user as any)) return;
+    const template = await this.service.getTemplate(templateId);
+    await this.scope.assertSite(req.user as any, template.siteId);
+  }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get()
-  list(
+  async list(
     @Req() req: Request,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -42,10 +52,12 @@ export class InterventionsController {
       siteId,
       type: (type as any) ?? 'all',
       subType,
-      agentId: agentId ?? (user?.role === 'AGENT' ? user.sub : undefined),
+      // Un agent ne voit que ses propres interventions, quel que soit le paramètre envoyé.
+      agentId: user?.role === 'AGENT' ? user.sub : agentId,
       status: (status as any) ?? 'all',
       page: parseInt(page, 10) || 1,
       pageSize: parseInt(pageSize, 10) || 20,
+      siteIds: await this.scope.siteIds(user),
     };
     return this.service.list(filters);
   }
@@ -61,23 +73,25 @@ export class InterventionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get('route-optimization')
-  getRouteOptimization(@Req() req: Request, @Query('userId') userId?: string, @Query('date') date?: string) {
+  async getRouteOptimization(@Req() req: Request, @Query('userId') userId?: string, @Query('date') date?: string) {
     const user = req.user as any;
     const targetUserId = user.role === 'AGENT' ? user.sub : userId;
     if (!targetUserId || !date) {
       return { userId: targetUserId, date, stops: [], totalDistanceMeters: 0 };
     }
+    await this.scope.assertAgent(user, targetUserId);
     return this.service.getRouteOptimization(targetUserId, date);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('estimate-duration')
-  estimateDuration(@Query('siteId') siteId: string, @Query('type') type?: string) {
+  async estimateDuration(@Req() req: Request, @Query('siteId') siteId: string, @Query('type') type?: string) {
+    await this.scope.assertSite(req.user as any, siteId);
     return this.service.estimateDuration(siteId, type);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('site', 'siteId'))
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('site-roster/:siteId')
   getSiteRoster(@Param('siteId') siteId: string) {
@@ -87,16 +101,18 @@ export class InterventionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('planning')
-  getPlanning(
+  async getPlanning(
+    @Req() req: Request,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
     @Query('agentId') agentId?: string,
     @Query('siteId') siteId?: string,
   ) {
-    return this.service.getPlanning({ startDate, endDate, agentId, siteId });
+    const siteIds = await this.scope.siteIds(req.user as any);
+    return this.service.getPlanning({ startDate, endDate, agentId, siteId, siteIds });
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get(':id')
   detail(@Param('id') id: string, @Req() req: Request) {
@@ -107,9 +123,10 @@ export class InterventionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Post()
-  create(@Body() dto: CreateInterventionDto, @Req() req: Request) {
+  async create(@Body() dto: CreateInterventionDto, @Req() req: Request) {
     const user = req.user as any;
     if (user.role === 'SUPERVISOR') {
+      await this.scope.assertSite(user, dto.siteId);
       return this.approvals.createRequest({
         actionType: 'CREATE_INTERVENTION',
         entityType: 'Intervention',
@@ -129,12 +146,13 @@ export class InterventionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Post('batch')
-  createOneshotBatch(@Body('occurrences') occurrences: any[], @Req() req: Request) {
+  async createOneshotBatch(@Body('occurrences') occurrences: any[], @Req() req: Request) {
     if (!Array.isArray(occurrences) || !occurrences.length) {
       throw new BadRequestException('Au moins un arrêt est requis.');
     }
     const user = req.user as any;
     if (user.role === 'SUPERVISOR') {
+      await this.scope.assertSites(user, occurrences.map((occ) => occ?.siteId));
       return this.approvals.createRequest({
         actionType: 'CREATE_INTERVENTION',
         entityType: 'Intervention',
@@ -147,13 +165,15 @@ export class InterventionsController {
     return this.service.createOneshotBatch(occurrences, user.sub);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateInterventionDto, @Req() req: Request) {
     const user = req.user as any;
     const touchesSchedule = dto.date !== undefined || dto.startTime !== undefined || dto.endTime !== undefined;
     const touchesAgents = dto.agentIds !== undefined;
+    // Déplacer une intervention vers un site hors périmètre est refusé (le site actuel est vérifié par la garde).
+    if (dto.siteId !== undefined) await this.scope.assertSite(user, dto.siteId);
 
     if (user.role === 'SUPERVISOR' && !dto.status && (touchesSchedule || touchesAgents)) {
       const original = await this.service.findOne(id, { id: user.sub, role: user.role });
@@ -187,7 +207,7 @@ export class InterventionsController {
     return this.service.update(id, dto, user?.sub, user?.role);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body('status') status: string, @Req() req: Request) {
@@ -195,14 +215,14 @@ export class InterventionsController {
     return this.service.updateStatus(id, status as any, { id: user.sub, role: user.role });
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR')
   @Post(':id/duplicate')
   duplicate(@Param('id') id: string, @Body() dto: DuplicateInterventionDto, @Req() req: Request) {
     return this.service.duplicate(id, dto, (req.user as any)?.sub);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR')
   @Post(':id/cancel')
   async cancel(@Param('id') id: string, @Body('observation') observation: string, @Req() req: Request) {
@@ -225,15 +245,20 @@ export class InterventionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('templates/list')
-  listTemplates() {
-    return this.service.listTemplates();
+  async listTemplates(@Req() req: Request) {
+    return this.service.listTemplates(await this.scope.siteIds(req.user as any));
   }
 
   // Doit être déclarée avant 'templates/:id' (sinon Express matche :id="agent-suggestions").
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('templates/agent-suggestions')
-  getTemplateAgentSuggestions(@Query('siteId') siteId: string, @Query('excludeAgentIds') excludeAgentIds?: string) {
+  async getTemplateAgentSuggestions(
+    @Req() req: Request,
+    @Query('siteId') siteId: string,
+    @Query('excludeAgentIds') excludeAgentIds?: string,
+  ) {
+    await this.scope.assertSite(req.user as any, siteId);
     const exclude = excludeAgentIds ? excludeAgentIds.split(',').filter(Boolean) : [];
     return this.service.getTemplateAgentSuggestions(siteId, exclude);
   }
@@ -241,37 +266,48 @@ export class InterventionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('templates/:id')
-  getTemplate(@Param('id') id: string) {
+  async getTemplate(@Param('id') id: string, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
     return this.service.getTemplate(id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Post('templates')
-  createTemplate(@Body() dto: CreateTemplateDto, @Req() req: Request) {
+  async createTemplate(@Body() dto: CreateTemplateDto, @Req() req: Request) {
     const user = req.user as any;
+    await this.scope.assertSite(user, dto.siteId);
     return this.service.createTemplate(dto, user.sub, user.role);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch('templates/:id')
-  updateTemplate(@Param('id') id: string, @Body() dto: UpdateTemplateDto, @Req() req: Request) {
+  async updateTemplate(@Param('id') id: string, @Body() dto: UpdateTemplateDto, @Req() req: Request) {
     const user = req.user as any;
+    await this.assertTemplateInScope(req, id);
+    if (dto.siteId !== undefined) await this.scope.assertSite(user, dto.siteId);
     return this.service.updateTemplate(id, dto, user.sub, user.role);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch('templates/:id/toggle')
-  toggleTemplate(@Param('id') id: string, @Body('active') active: boolean) {
+  async toggleTemplate(@Param('id') id: string, @Body('active') active: boolean, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
     return this.service.toggleTemplate(id, active);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('templates/:id/preview')
-  previewTemplate(@Param('id') id: string, @Query('startDate') startDate: string, @Query('endDate') endDate: string) {
+  async previewTemplate(
+    @Param('id') id: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Req() req: Request,
+  ) {
+    await this.assertTemplateInScope(req, id);
     return this.service.previewTemplateOccurrences(id, startDate, endDate);
   }
 
@@ -291,6 +327,7 @@ export class InterventionsController {
   ) {
     const user = req.user as any;
     const template = await this.service.getTemplate(id);
+    await this.scope.assertSite(user, template.siteId);
     if (!template.validatedAt) {
       throw new BadRequestException('Le gabarit doit être validé avant de pouvoir être généré.');
     }
@@ -314,14 +351,14 @@ export class InterventionsController {
     return this.service.createTemplateBatch(payload, user.sub);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get(':id/checklist')
   listChecklist(@Param('id') id: string) {
     return this.service.listChecklist(id);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Patch(':id/checklist/:itemId')
   toggleChecklistItem(
@@ -333,14 +370,14 @@ export class InterventionsController {
     return this.service.toggleChecklistItem(id, itemId, done, (req.user as any)?.sub);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR')
   @Get(':id/assignment-suggestions')
   getAssignmentSuggestions(@Param('id') id: string) {
     return this.service.getAssignmentSuggestions(id);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Post(':id/signature')
   setClientSignature(@Param('id') id: string, @Body() dto: SetSignatureDto, @Req() req: Request) {

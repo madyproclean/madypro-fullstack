@@ -10,9 +10,11 @@ export class AvailabilityService {
     return this.prisma.availability.findMany({ where: { userId }, orderBy: { date: 'asc' } });
   }
 
-  findAll(from?: string, to?: string) {
+  /** `userIds` restreint au périmètre d'un superviseur. */
+  findAll(from?: string, to?: string, userIds: string[] | null = null) {
     return this.prisma.availability.findMany({
       where: {
+        ...(userIds ? { userId: { in: userIds } } : {}),
         date: {
           gte: from ? new Date(from) : undefined,
           lte: to ? new Date(to) : undefined,

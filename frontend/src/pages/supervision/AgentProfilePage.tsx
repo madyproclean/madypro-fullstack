@@ -15,7 +15,7 @@ import { Site } from '../../types/site';
 import { Certification, EmployeeDocument, UserBadge } from '../../types/team';
 import { Button } from '../../components/ui/Button';
 import { List, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
-import { formatDateTime } from '../../utils/datetime';
+import { formatHour } from '../../utils/datetime';
 import { Badge } from '../../components/ui/Badge';
 import { PageHeader } from '../../components/ui/PageHeader';
 
@@ -335,8 +335,8 @@ export const AgentProfilePage: React.FC = () => {
                 <tr key={att.id}>
                   <td>{att.date}</td>
                   <td>{att.site.name}</td>
-                  <td>{att.checkInTime ? formatDateTime(att.checkInTime) : '—'}</td>
-                  <td>{att.checkOutTime ? formatDateTime(att.checkOutTime) : '—'}</td>
+                  <td>{formatHour(att.checkInTime)}</td>
+                  <td>{formatHour(att.checkOutTime)}</td>
                   <td>{att.durationMinutes != null ? `${att.durationMinutes} min` : '—'}</td>
                   <td>{{ PENDING: 'En attente', COMPLETED: 'Terminé', CANCELLED: 'Annulé' }[att.status] ?? att.status}</td>
                 </tr>

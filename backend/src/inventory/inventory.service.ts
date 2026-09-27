@@ -6,15 +6,18 @@ import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(siteId?: string) {
+  /** `siteIds` restreint au périmètre d'un superviseur ; un site explicite hors périmètre ne renvoie rien. */
+  findAll(siteId?: string, siteIds: string[] | null = null) {
+    const siteFilter = siteIds ? (siteId ? (siteIds.includes(siteId) ? siteId : '__none__') : { in: siteIds }) : siteId;
     return this.prisma.inventoryItem.findMany({
-      where: siteId ? { siteId } : undefined,
+      where: siteFilter ? { siteId: siteFilter } : undefined,
       orderBy: { name: 'asc' },
     });
   }
 
-  async findLowStock() {
+  async findLowStock(siteIds: string[] | null = null) {
     const items = await this.prisma.inventoryItem.findMany({
+      where: siteIds ? { siteId: { in: siteIds } } : undefined,
       include: { site: { select: { id: true, name: true } } },
       orderBy: { quantity: 'asc' },
     });
@@ -27,6 +30,14 @@ export class InventoryService {
       throw new NotFoundException('Article introuvable pour ce code-barres');
     }
     return item;
+  }
+
+  async getSiteId(id: string): Promise<string> {
+    const item = await this.prisma.inventoryItem.findUnique({ where: { id }, select: { siteId: true } });
+    if (!item) {
+      throw new NotFoundException('Article introuvable');
+    }
+    return item.siteId;
   }
 
   create(dto: CreateInventoryItemDto) {

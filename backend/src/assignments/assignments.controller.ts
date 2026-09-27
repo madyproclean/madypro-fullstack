@@ -6,8 +6,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 
+// Ancien module (données en mémoire), utilisé ni par le web ni par le mobile : réservé à l'admin.
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'SUPERVISOR')
+@Roles('ADMIN')
 @Controller('assignments')
 export class AssignmentsController {
   constructor(private readonly service: AssignmentsService) {}

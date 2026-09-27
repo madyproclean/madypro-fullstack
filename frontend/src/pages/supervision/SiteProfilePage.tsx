@@ -25,7 +25,7 @@ import { Absence } from '../../types/absence';
 import { Button } from '../../components/ui/Button';
 import { List, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tabs, TabPanel } from '../../components/ui/Tabs';
-import { formatDateTime } from '../../utils/datetime';
+import { formatHour } from '../../utils/datetime';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -408,8 +408,8 @@ export const SiteProfilePage: React.FC = () => {
                   <td>
                     <Link to={`/supervision/agents/${att.agent.id}`}>{att.agent.name}</Link>
                   </td>
-                  <td>{att.checkInTime ? formatDateTime(att.checkInTime) : '—'}</td>
-                  <td>{att.checkOutTime ? formatDateTime(att.checkOutTime) : '—'}</td>
+                  <td>{formatHour(att.checkInTime)}</td>
+                  <td>{formatHour(att.checkOutTime)}</td>
                   <td>{att.durationMinutes != null ? `${att.durationMinutes} min` : '—'}</td>
                   <td>{{ PENDING: 'En attente', COMPLETED: 'Terminé', CANCELLED: 'Annulé' }[att.status] ?? att.status}</td>
                 </tr>

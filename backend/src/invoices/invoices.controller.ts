@@ -10,7 +10,7 @@ import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
 import { RecordInvoicePaymentDto } from './dto/record-invoice-payment.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'SUPERVISOR')
+@Roles('ADMIN')
 @Controller('invoices')
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}

@@ -35,6 +35,7 @@ describe('AbsencesService — chevauchement de dates', () => {
       sitesService as any,
       auditService as any,
       notifications as any,
+      { agentIds: jest.fn().mockResolvedValue(null) } as any,
     );
     return { service, prisma };
   };

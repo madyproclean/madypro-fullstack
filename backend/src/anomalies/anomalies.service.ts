@@ -46,6 +46,14 @@ export class AnomaliesService {
     return present(record);
   }
 
+  async getInterventionId(id: string): Promise<string> {
+    const existing = await this.prisma.anomaly.findUnique({ where: { id }, select: { interventionId: true } });
+    if (!existing) {
+      throw new NotFoundException('Anomalie introuvable');
+    }
+    return existing.interventionId;
+  }
+
   async updateStatus(id: string, dto: UpdateAnomalyStatusDto) {
     const existing = await this.prisma.anomaly.findUnique({ where: { id } });
     if (!existing) {

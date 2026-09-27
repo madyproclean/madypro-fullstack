@@ -19,12 +19,20 @@ export class BadgesService {
     return this.prisma.badge.create({ data: dto });
   }
 
-  findAwards(userId?: string) {
+  /** `userIds` restreint au périmètre d'un superviseur ; un agent hors périmètre ne renvoie rien. */
+  findAwards(userId?: string, userIds: string[] | null = null) {
+    const userFilter = userIds ? (userId ? (userIds.includes(userId) ? userId : '__none__') : { in: userIds }) : userId;
     return this.prisma.userBadge.findMany({
-      where: userId ? { userId } : undefined,
+      where: userFilter ? { userId: userFilter } : undefined,
       orderBy: { awardedAt: 'desc' },
       include: { badge: true },
     });
+  }
+
+  async getAwardUserId(id: string): Promise<string> {
+    const award = await this.prisma.userBadge.findUnique({ where: { id }, select: { userId: true } });
+    if (!award) throw new NotFoundException('Badge attribué introuvable');
+    return award.userId;
   }
 
   async award(awardedBy: string, dto: AwardBadgeDto) {

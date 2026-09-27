@@ -44,7 +44,16 @@ export type InterventionFilters = {
   status?: InterventionStatus | 'all';
   page?: number;
   pageSize?: number;
+  /** Restreint aux sites donnés (périmètre superviseur) ; `null`/absent = pas de restriction. */
+  siteIds?: string[] | null;
 };
+
+/** Combine un filtre de site explicite avec un périmètre : hors périmètre → aucun résultat. */
+function scopeSiteFilter(siteId: string | undefined, siteIds: string[] | null | undefined) {
+  if (!siteIds) return siteId;
+  if (siteId) return siteIds.includes(siteId) ? siteId : '__none__';
+  return { in: siteIds };
+}
 
 export type InterventionView = InterventionEntity & {
   siteName: string;
@@ -494,9 +503,8 @@ export class InterventionsService implements OnModuleInit {
                 data: { interventionId: intervention.id },
               }),
             ),
-            this.notifications.send({
-              audience: 'SITE_AGENTS',
-              targetId: intervention.siteId,
+            // Superviseurs du site uniquement (l'audience SITE_AGENTS atteignait tous les agents).
+            this.notifications.notifySiteSupervisors([intervention.siteId], {
               title: 'Intervention à valider',
               message,
               data: { interventionId: intervention.id },
@@ -661,8 +669,9 @@ export class InterventionsService implements OnModuleInit {
         where.date.lte = this.endOfDay(filters.endDate);
       }
     }
-    if (filters.siteId) {
-      where.siteId = filters.siteId;
+    const siteFilter = scopeSiteFilter(filters.siteId, filters.siteIds);
+    if (siteFilter) {
+      where.siteId = siteFilter;
     }
     if (filters.type && filters.type !== 'all') {
       const normalizedType = this.normalizeTypeInput(filters.type);
@@ -1221,8 +1230,9 @@ export class InterventionsService implements OnModuleInit {
     }
   }
 
-  async listTemplates(): Promise<InterventionTemplateEntity[]> {
+  async listTemplates(siteIds: string[] | null = null): Promise<InterventionTemplateEntity[]> {
     const templates = await this.prisma.interventionTemplate.findMany({
+      where: siteIds ? { siteId: { in: siteIds } } : {},
       orderBy: { createdAt: 'desc' },
       include: { stops: true },
     });
@@ -1526,14 +1536,21 @@ export class InterventionsService implements OnModuleInit {
    * `source: 'real'` si l'intervention correspondante a déjà été matérialisée (job jour-J ou
    * génération manuelle), sinon `source: 'projected'`.
    */
-  async getPlanning(params: { startDate: string; endDate: string; agentId?: string; siteId?: string }) {
+  async getPlanning(params: {
+    startDate: string;
+    endDate: string;
+    agentId?: string;
+    siteId?: string;
+    siteIds?: string[] | null;
+  }) {
+    const siteFilter = scopeSiteFilter(params.siteId, params.siteIds);
     const horizonStart = this.toDateOnly(params.startDate);
     const horizonEnd = this.toDateOnly(params.endDate);
     const templates = await this.prisma.interventionTemplate.findMany({
       where: {
         active: true,
         validatedAt: { not: null },
-        ...(params.siteId ? { siteId: params.siteId } : {}),
+        ...(siteFilter ? { siteId: siteFilter } : {}),
       },
       include: { stops: true, site: { select: { id: true, name: true } } },
     });
@@ -1837,7 +1854,7 @@ export class InterventionsService implements OnModuleInit {
   }
 
   async toggleChecklistItem(interventionId: string, itemId: string, done: boolean, actorId: string) {
-    await this.findRecord(interventionId);
+    const intervention = await this.findRecord(interventionId);
     const existing = await this.prisma.interventionChecklistItem.findFirst({
       where: { id: itemId, interventionId },
     });
@@ -1854,6 +1871,7 @@ export class InterventionsService implements OnModuleInit {
     });
     this.realtime.broadcast('intervention.checklist', {
       interventionId,
+      siteId: intervention.siteId,
       itemId: item.id,
       done: item.done,
     });

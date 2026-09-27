@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AbsenceEntity, AbsenceStatus, AbsenceType } from './entities/absence.entity';
 import { UsersService } from '../users/users.service';
@@ -9,6 +9,7 @@ import { UpdateAbsenceStatusDto } from './dto/update-absence-status.dto';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { BadRequestException } from '@nestjs/common';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 type AbsenceFilters = {
@@ -55,6 +56,7 @@ export class AbsencesService {
     private readonly sitesService: SitesService,
     private readonly auditService: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly scope: SupervisorScopeService,
   ) {}
 
   private toDateOnly(value: string) {
@@ -114,31 +116,10 @@ export class AbsencesService {
     };
   }
 
-  /**
-   * Périmètre d'un superviseur : les agents déjà affectés à au moins une intervention sur l'un de
-   * ses sites (aucune fenêtre de dates — cohérent avec le même calcul utilisé pour la messagerie).
-   * `null` = pas de restriction (admin).
-   */
-  private async getScopedAgentIds(viewerId: string, viewerRole?: string): Promise<Set<string> | null> {
-    if (viewerRole?.toString().trim().toUpperCase() !== 'SUPERVISOR') return null;
-    const siteLinks = await this.prisma.siteSupervisor.findMany({
-      where: { userId: viewerId },
-      select: { siteId: true },
-    });
-    const siteIds = siteLinks.map((link) => link.siteId);
-    if (!siteIds.length) return new Set();
-    const assignments = await this.prisma.interventionAssignment.findMany({
-      where: { intervention: { siteId: { in: siteIds } } },
-      select: { userId: true },
-      distinct: ['userId'],
-    });
-    return new Set(assignments.map((a) => a.userId));
-  }
-
   async assertAgentInScope(agentUserId: string, viewer?: { id?: string; role?: string }) {
-    const scoped = await this.getScopedAgentIds(viewer?.id ?? '', viewer?.role);
+    const scoped = await this.scope.agentIds(viewer);
     if (scoped && !scoped.has(agentUserId)) {
-      throw new UnauthorizedException("Cet agent n'est pas dans votre périmètre de supervision");
+      throw new ForbiddenException("Cet agent n'est pas dans votre périmètre de supervision");
     }
   }
 
@@ -157,7 +138,7 @@ export class AbsencesService {
     } else if (filters.userId) {
       where.userId = filters.userId;
     }
-    const scopedAgentIds = await this.getScopedAgentIds(viewer?.id ?? '', role);
+    const scopedAgentIds = await this.scope.agentIds(viewer);
     if (scopedAgentIds) {
       if (filters.userId && !scopedAgentIds.has(filters.userId)) {
         // Agent demandé hors périmètre : ne rien renvoyer plutôt que de laisser passer le filtre tel quel.
@@ -334,6 +315,15 @@ export class AbsencesService {
       entityId: record.id,
       details: autoApproved ? `Demande ${data.type} (auto-approuvée)` : `Demande ${data.type}`,
     });
+    if (!autoApproved) {
+      const agentName = this.usersService.findOne(data.userId)?.name ?? 'Un agent';
+      await this.notifications.notifyAgentSupervisors(data.userId, {
+        title: 'Absence à valider',
+        message: `${agentName} demande une absence du ${data.from} au ${data.to}.`,
+        category: 'absence',
+        data: { absenceId: record.id },
+      });
+    }
     return this.toView(this.toEntity(record));
   }
 
@@ -363,6 +353,7 @@ export class AbsencesService {
     if (!this.usersService.findOne(data.userId)) {
       throw new NotFoundException('Agent introuvable');
     }
+    await this.assertAgentInScope(data.userId, actor);
     const fromDate = this.toDateOnly(data.from);
     const toDate = this.toDateOnly(data.to);
     if (fromDate > toDate) {

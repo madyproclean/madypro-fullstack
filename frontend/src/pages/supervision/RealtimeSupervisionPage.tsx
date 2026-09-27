@@ -14,7 +14,7 @@ import { Button } from '../../components/ui/Button';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { List, Map as MapIcon } from 'lucide-react';
-import { formatDateTime } from '../../utils/datetime';
+import { formatHour } from '../../utils/datetime';
 import { env } from '../../config/env';
 
 type View = 'liste' | 'carte';
@@ -153,7 +153,7 @@ const PresenceListView: React.FC = () => {
                         <Link to={`/supervision/agents/${att.agent.id}`}>{att.agent.name}</Link>
                       </td>
                       <td>{att.site.name}</td>
-                      <td>{att.checkInTime ? formatDateTime(att.checkInTime) : '—'}</td>
+                      <td>{formatHour(att.checkInTime)}</td>
                       <td>
                         {att.plannedStart || att.plannedEnd
                           ? `${att.plannedStart ?? '—'}${att.plannedEnd ? ` → ${att.plannedEnd}` : ''}`

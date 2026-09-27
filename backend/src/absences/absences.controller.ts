@@ -83,12 +83,13 @@ export class AbsencesController {
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Post('request')
-  request(@Req() req: any, @Body() body: CreateAbsenceRequestDto) {
+  async request(@Req() req: any, @Body() body: CreateAbsenceRequestDto) {
     const viewer = req.user;
     const enforcedUserId = viewer?.role?.toUpperCase() === 'AGENT' ? viewer.userId : body.userId;
     if (!enforcedUserId) {
       throw new BadRequestException('userId requis');
     }
+    await this.service.assertAgentInScope(enforcedUserId, { id: viewer?.userId ?? viewer?.sub, role: viewer?.role });
     return this.service.request({ ...body, userId: enforcedUserId });
   }
 
@@ -118,13 +119,16 @@ export class AbsencesController {
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get('leave-balance/:userId')
-  getLeaveBalance(
+  async getLeaveBalance(
     @Req() req: any,
     @Param('userId') userId: string,
     @Query('year') year?: string,
   ) {
     if (req.user?.role === 'AGENT' && req.user.userId !== userId) {
       throw new ForbiddenException('Accès refusé');
+    }
+    if (req.user?.userId !== userId) {
+      await this.service.assertAgentInScope(userId, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
     }
     return this.service.getLeaveBalance(userId, year ? Number(year) : new Date().getFullYear());
   }
