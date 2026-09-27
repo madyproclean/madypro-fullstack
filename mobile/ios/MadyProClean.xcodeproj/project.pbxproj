@@ -307,7 +307,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				TARGETED_DEVICE_FAMILY = "1";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				SWIFT_OBJC_BRIDGING_HEADER = MadyProClean/MadyProClean-Bridging-Header.h;
 				CODE_SIGN_ENTITLEMENTS = MadyProClean/MadyProClean.entitlements;
 			};
@@ -333,7 +333,7 @@
 				PRODUCT_NAME = "MadyProClean";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				TARGETED_DEVICE_FAMILY = "1";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				SWIFT_OBJC_BRIDGING_HEADER = MadyProClean/MadyProClean-Bridging-Header.h;
 				CODE_SIGN_ENTITLEMENTS = MadyProClean/MadyProClean.entitlements;
 			};

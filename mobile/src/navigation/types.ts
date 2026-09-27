@@ -30,8 +30,20 @@ export type AgentStackParamList = {
   AgentOnboardingChecklist: undefined;
 };
 
+/** Rubriques de l'espace superviseur (tablette), dans l'ordre de la navigation latérale. */
+export type SupervisorTabParamList = {
+  SupervisorToday: undefined;
+  SupervisorMap: undefined;
+  SupervisorMissions: { interventionId?: string } | undefined;
+  SupervisorValidations: { absenceId?: string } | undefined;
+  SupervisorTeam: undefined;
+  SupervisorMessages: { threadUserId?: string } | undefined;
+};
+
 export type RootStackParamList = {
   Onboarding: undefined;
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Agent: NavigatorScreenParams<AgentStackParamList>;
+  Supervisor: NavigatorScreenParams<SupervisorTabParamList>;
+  AdminWebOnly: undefined;
 };

@@ -4,6 +4,9 @@ export const theme = {
     inkLight: '#7B8781',
     muted: '#5C6864',
     primary: '#0f98eb',
+    /** Bleu foncé : fonds de boutons sous texte blanc (contraste suffisant, contrairement à primary). */
+    primaryDark: '#1B5CA0',
+    border: '#DDE5EF',
     primarySoft: '#E3F4FC',
     cream: '#F4F8FC',
     shell: '#FFFFFF',

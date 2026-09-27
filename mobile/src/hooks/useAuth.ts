@@ -12,8 +12,10 @@ export const useAuth = () => {
       setLoading(true);
       setError(null);
       const response = await loginRequest(email, password);
-      if (response.user.role !== 'AGENT') {
-        throw new Error("Cet espace mobile est réservé aux agents. Merci d'utiliser la version web.");
+      // Agents (téléphone) et superviseurs (tablette) ; l'administration se fait sur le web.
+      const role = response.user.role?.toUpperCase();
+      if (role !== 'AGENT' && role !== 'SUPERVISOR') {
+        throw new Error("L'application mobile est réservée aux agents et aux superviseurs. Merci d'utiliser la version web.");
       }
       login(response.user, response.token);
       return response;

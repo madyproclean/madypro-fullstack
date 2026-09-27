@@ -28,8 +28,10 @@ import AgentOnboardingChecklistScreen from '@/screens/agent/AgentOnboardingCheck
 import OnboardingScreen from '@/screens/OnboardingScreen';
 import LoginScreen from '@/screens/auth/LoginScreen';
 import ForgotPasswordScreen from '@/screens/auth/ForgotPasswordScreen';
+import AdminWebOnlyScreen from '@/screens/AdminWebOnlyScreen';
 import { useAuthContext } from '@/context/AuthContext';
 import { navigationRef } from './navigationRef';
+import { SupervisorNavigator } from './SupervisorNavigator';
 import { AgentStackParamList, AgentTabParamList, AuthStackParamList, RootStackParamList } from './types';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -125,6 +127,7 @@ export function AppNavigator() {
   const ready = hasCompletedOnboarding !== null && isAuthReady;
   const showOnboarding = hasCompletedOnboarding === false;
   const showAuth = hasCompletedOnboarding === true && !user;
+  const role = user?.role?.toUpperCase();
 
   const loader = useMemo(
     () => (
@@ -150,7 +153,12 @@ export function AppNavigator() {
 
         {showAuth ? <RootStack.Screen name="Auth" component={AuthNavigator} /> : null}
 
-        {user ? <RootStack.Screen name="Agent" component={AgentNavigator} /> : null}
+        {/* Aiguillage par rôle : chaque profil n'a accès qu'à son propre espace. */}
+        {role === 'AGENT' ? <RootStack.Screen name="Agent" component={AgentNavigator} /> : null}
+        {role === 'SUPERVISOR' ? <RootStack.Screen name="Supervisor" component={SupervisorNavigator} /> : null}
+        {user && role !== 'AGENT' && role !== 'SUPERVISOR' ? (
+          <RootStack.Screen name="AdminWebOnly" component={AdminWebOnlyScreen} />
+        ) : null}
       </RootStack.Navigator>
     </NavigationContainer>
   );
