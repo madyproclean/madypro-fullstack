@@ -32,6 +32,19 @@ export class ApprovalsController {
     });
   }
 
+  /** Demandes déposées par l'utilisateur connecté (suivi côté superviseur), plus récentes d'abord. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Get('mine')
+  mine(@Req() req: Request, @Query('status') status?: string, @Query('pageSize') pageSize = '50') {
+    const user = req.user as any;
+    return this.approvals.list({
+      status,
+      requestedById: user.sub,
+      pageSize: Math.min(parseInt(pageSize, 10) || 50, 200),
+    });
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Post(':id/approve')

@@ -1,5 +1,6 @@
 import { StatusTone } from '@/components/ui/StatusPill';
 import { Intervention } from '@/types/intervention';
+import { ApprovalActionType } from '@/types/supervision';
 
 /** Date locale de l'appareil au format YYYY-MM-DD (les tablettes sont à l'heure de Paris). */
 export const toISODate = (date: Date) => {
@@ -79,3 +80,14 @@ export const ANOMALY_LABELS: Record<string, string> = {
 
 /** Signal GPS considéré comme ancien au-delà de ce délai. */
 export const STALE_SIGNAL_MINUTES = 15;
+
+/** Nature d'une demande envoyée à l'administrateur, en langage courant. */
+export const APPROVAL_ACTION_LABELS: Record<ApprovalActionType, string> = {
+  CREATE_INTERVENTION: 'Nouvelle mission',
+  UPDATE_INTERVENTION_SCHEDULE: 'Déplacement de mission',
+  ASSIGN_AGENT: "Ajout ou remplacement d'agent",
+  UNASSIGN_AGENT: "Retrait d'agent",
+  CANCEL_INTERVENTION: 'Annulation de mission',
+  CREATE_TEMPLATE_BATCH: 'Génération de missions',
+  VALIDATE_TEMPLATE: 'Validation de gabarit',
+};

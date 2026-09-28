@@ -7,19 +7,13 @@ import { RAIL_COMPACT, RAIL_WIDE, SideRail, SUPERVISOR_SECTIONS } from '@/compon
 import SupervisorTodayScreen from '@/screens/supervisor/SupervisorTodayScreen';
 import SupervisorMapScreen from '@/screens/supervisor/SupervisorMapScreen';
 import SupervisorMissionsScreen from '@/screens/supervisor/SupervisorMissionsScreen';
+import SupervisorValidationsScreen from '@/screens/supervisor/SupervisorValidationsScreen';
 import { SupervisorComingSoonScreen } from '@/screens/supervisor/SupervisorComingSoonScreen';
 import { SupervisorTabParamList } from './types';
 
 const Tabs = createBottomTabNavigator<SupervisorTabParamList>();
 
 // Rubriques livrées aux sprints suivants (voir le plan tablette superviseur).
-const ValidationsScreen = () => (
-  <SupervisorComingSoonScreen
-    title="Validations"
-    icon="checkmark-done-outline"
-    description="Les absences de votre équipe à valider et le suivi de vos demandes de changement de planning."
-  />
-);
 const TeamScreen = () => (
   <SupervisorComingSoonScreen
     title="Équipe et sites"
@@ -56,7 +50,7 @@ export function SupervisorNavigator() {
       <Tabs.Screen name="SupervisorMissions" component={SupervisorMissionsScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMissions.label }} />
       <Tabs.Screen
         name="SupervisorValidations"
-        component={ValidationsScreen}
+        component={SupervisorValidationsScreen}
         options={{ title: SUPERVISOR_SECTIONS.SupervisorValidations.label }}
       />
       <Tabs.Screen name="SupervisorTeam" component={TeamScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorTeam.label }} />

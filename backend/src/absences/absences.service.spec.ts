@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AbsencesService } from './absences.service';
 
 /**
@@ -96,5 +96,58 @@ describe('AbsencesService — chevauchement de dates', () => {
         reason: 'Grippe',
       } as any),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('AbsencesService — absence longue à double validation', () => {
+  const LONG = {
+    id: 'absence-long',
+    userId: 'user-1',
+    status: 'PENDING',
+    requiresSecondApproval: true,
+    level1ApprovedBy: 'sup-1',
+    from: new Date('2026-10-08T00:00:00.000Z'),
+    to: new Date('2026-10-15T00:00:00.000Z'),
+  };
+
+  const buildService = () => {
+    const prisma = {
+      absence: {
+        findUnique: jest.fn().mockResolvedValue(LONG),
+        update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...LONG, ...data })),
+      },
+    };
+    const service = new AbsencesService(
+      prisma as any,
+      { findOne: jest.fn().mockReturnValue({ id: 'user-1', name: 'Agent Test' }) } as any,
+      { findOne: jest.fn().mockReturnValue(null) } as any,
+      { record: jest.fn() } as any,
+      { notifyRole: jest.fn(), notifyUser: jest.fn(), send: jest.fn() } as any,
+      { agentIds: jest.fn().mockImplementation((v: any) => Promise.resolve(v?.role === 'SUPERVISOR' ? new Set(['user-1']) : null)) } as any,
+    );
+    return { service, prisma };
+  };
+
+  it("refuse l'accord final au superviseur, même après sa première validation", async () => {
+    const { service, prisma } = buildService();
+    await expect(
+      service.updateStatus('absence-long', { status: 'APPROVED' } as any, { id: 'sup-1', role: 'SUPERVISOR' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.absence.update).not.toHaveBeenCalled();
+  });
+
+  it('laisse le superviseur refuser une absence longue', async () => {
+    const { service } = buildService();
+    const result = await service.updateStatus('absence-long', { status: 'REJECTED', comment: 'Effectif insuffisant' } as any, {
+      id: 'sup-1',
+      role: 'SUPERVISOR',
+    });
+    expect(result.status).toBe('REJECTED');
+  });
+
+  it("accepte l'accord final de l'administrateur", async () => {
+    const { service } = buildService();
+    const result = await service.updateStatus('absence-long', { status: 'APPROVED' } as any, { id: 'admin-1', role: 'ADMIN' });
+    expect(result.status).toBe('APPROVED');
   });
 });

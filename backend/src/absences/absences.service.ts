@@ -403,6 +403,10 @@ export class AbsencesService {
           "Cette absence nécessite une première validation (superviseur) avant l'approbation finale",
         );
       }
+      // Double contrôle : le superviseur donne la première validation, l'accord final revient à l'administrateur.
+      if (existing.requiresSecondApproval && viewer?.role === 'SUPERVISOR') {
+        throw new ForbiddenException("L'accord final de cette absence longue revient à l'administrateur");
+      }
     }
     const record = await this.prisma.absence.update({
       where: { id },
@@ -413,7 +417,7 @@ export class AbsencesService {
       },
     });
     this.auditService.record({
-      actorId: dto.validatedBy,
+      actorId: viewer?.id ?? dto.validatedBy ?? 'unknown',
       action: 'UPDATE_ABSENCE_STATUS',
       entityType: 'absence',
       entityId: id,

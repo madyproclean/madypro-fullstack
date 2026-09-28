@@ -6,11 +6,12 @@ import { useAuthContext } from '@/context/AuthContext';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { getInterventionById, InterventionChecklistItem, listInterventionChecklist, updateInterventionStatus } from '@/services/api/interventions.api';
 import { listAnomalies, updateAnomalyStatus } from '@/services/api/anomalies.api';
-import { listMissionAttendance } from '@/services/api/supervision.api';
+import { listMissionAttendance, listMyRequests } from '@/services/api/supervision.api';
 import { Intervention } from '@/types/intervention';
 import { Anomaly } from '@/types/anomaly';
-import { MissionAttendance } from '@/types/supervision';
-import { ANOMALY_LABELS, formatClock, formatDayLong, missionStatus } from './format';
+import { ApprovalRequest, MissionAttendance } from '@/types/supervision';
+import { ANOMALY_LABELS, APPROVAL_ACTION_LABELS, formatClock, formatDayLong, missionStatus } from './format';
+import { MissionRequestKind, MissionRequestSheet } from './MissionRequestSheet';
 
 type Props = {
   interventionId: string;
@@ -23,6 +24,8 @@ type Loaded = {
   attendance: MissionAttendance[];
   checklist: InterventionChecklistItem[];
   anomalies: Anomaly[];
+  /** Demande du superviseur sur cette mission encore en attente de l'administrateur. */
+  pendingRequests: ApprovalRequest[];
 };
 
 /** Détail d'une mission : pointages, checklist, anomalies, photos, et validation si elle est à valider. */
@@ -33,6 +36,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [requestKind, setRequestKind] = useState<MissionRequestKind | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -43,12 +47,14 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
         return;
       }
       // Les éléments secondaires ne doivent pas empêcher d'afficher la mission.
-      const [attendance, checklist, anomalies] = await Promise.all([
+      const [attendance, checklist, anomalies, requests] = await Promise.all([
         listMissionAttendance(token, interventionId).catch(() => []),
         listInterventionChecklist(token, interventionId).catch(() => []),
         listAnomalies(token, interventionId).catch(() => []),
+        listMyRequests(token).catch(() => [] as ApprovalRequest[]),
       ]);
-      setData({ mission, attendance, checklist, anomalies });
+      const pendingRequests = requests.filter((r) => r.entityId === interventionId && r.status === 'PENDING');
+      setData({ mission, attendance, checklist, anomalies, pendingRequests });
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Impossible de charger la mission.');
@@ -107,7 +113,9 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
     );
   }
 
-  const { mission, attendance, checklist, anomalies } = data;
+  const { mission, attendance, checklist, anomalies, pendingRequests } = data;
+  // Changements de planning possibles tant que la mission n'est pas terminée.
+  const canRequestChange = mission.status === 'PLANNED' || mission.status === 'IN_PROGRESS';
   const status = missionStatus(mission);
   const done = checklist.filter((item) => item.done).length;
   const openAnomalies = anomalies.filter((a) => a.status !== 'RESOLVED');
@@ -150,14 +158,16 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
             const departure = att?.checkOutTime ? formatClock(att.checkOutTime) : formatClock(agent.checkOutTime);
             const complete = departure !== '—';
             const started = arrival !== '—';
+            // Avant l'heure de début, l'absence de pointage est normale : pas d'alerte rouge.
+            const upcoming = new Date() < new Date(`${mission.date}T${mission.startTime || '00:00'}:00`);
             return (
               <View key={agent.id} style={styles.attendanceRow}>
                 <Text style={[styles.cell, styles.bold]}>{agent.name}</Text>
                 <Text style={styles.cell}>Arrivée {arrival}</Text>
                 <Text style={styles.cell}>Départ {departure}</Text>
                 <StatusPill
-                  label={complete ? 'Complet' : started ? 'En cours' : 'Non pointé'}
-                  tone={complete ? 'success' : started ? 'info' : 'danger'}
+                  label={complete ? 'Complet' : started ? 'En cours' : upcoming ? 'Pas encore arrivé' : 'Non pointé'}
+                  tone={complete ? 'success' : started ? 'info' : upcoming ? 'neutral' : 'danger'}
                 />
               </View>
             );
@@ -235,6 +245,38 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
           <Text style={styles.errorText}>{actionError}</Text>
         </View>
       ) : null}
+
+      {pendingRequests.length ? (
+        <View style={styles.pending}>
+          <Ionicons name="hourglass-outline" size={20} color={theme.colors.primaryDark} />
+          <Text style={styles.pendingText}>
+            {pendingRequests.length > 1 ? "Demandes en attente de l'administrateur" : "Demande en attente de l'administrateur"} :{' '}
+            {pendingRequests.map((r) => APPROVAL_ACTION_LABELS[r.actionType] ?? 'Demande').join(', ')}. Suivi dans Validations › Mes demandes.
+          </Text>
+        </View>
+      ) : null}
+
+      {canRequestChange ? (
+        <View style={styles.actions}>
+          {mission.status === 'PLANNED' ? (
+            <ActionButton label="Déplacer" icon="calendar-outline" onPress={() => setRequestKind('reschedule')} />
+          ) : null}
+          <ActionButton label="Changer les agents" icon="people-outline" onPress={() => setRequestKind('agents')} />
+          {mission.status === 'PLANNED' ? (
+            <ActionButton label="Annuler la mission" icon="close-circle-outline" onPress={() => setRequestKind('cancel')} />
+          ) : null}
+        </View>
+      ) : null}
+
+      <MissionRequestSheet
+        kind={requestKind}
+        mission={mission}
+        onClose={() => setRequestKind(null)}
+        onSent={() => {
+          load();
+          onChanged?.();
+        }}
+      />
 
       {mission.status === 'NEEDS_REVIEW' ? (
         confirming ? (
@@ -343,6 +385,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.status.lateSoft,
   },
   warningText: { flex: 1, fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.ink },
+  pending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primarySoft,
+  },
+  pendingText: { flex: 1, fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.ink },
   confirm: { gap: 12, padding: 16, borderRadius: 16, backgroundColor: theme.colors.primarySoft },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' },
   button: {

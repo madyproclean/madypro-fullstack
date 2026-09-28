@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards, ForbiddenException } from '@nestjs/common';
 import { AbsencesService } from './absences.service';
+import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -11,7 +12,10 @@ import { BadRequestException } from '@nestjs/common';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('absences')
 export class AbsencesController {
-  constructor(private readonly service: AbsencesService) {}
+  constructor(
+    private readonly service: AbsencesService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get()
@@ -102,7 +106,10 @@ export class AbsencesController {
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id/status')
   updateStatus(@Req() req: any, @Param('id') id: string, @Body() body: UpdateAbsenceStatusDto) {
-    return this.service.updateStatus(id, body, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
+    const viewerId = req.user?.userId ?? req.user?.sub;
+    // Le valideur est celui du jeton, jamais une valeur envoyée par le client.
+    const validatedBy = this.usersService.findOne(viewerId)?.name ?? viewerId;
+    return this.service.updateStatus(id, { ...body, validatedBy }, { id: viewerId, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')

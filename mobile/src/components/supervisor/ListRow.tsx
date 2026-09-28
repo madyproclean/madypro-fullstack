@@ -11,11 +11,13 @@ type Props = {
   leading?: React.ReactNode;
   /** Élément à droite (statut, compteur). */
   trailing?: React.ReactNode;
+  /** Élément sous le texte (statut long qui écraserait le titre s'il était à droite). */
+  below?: React.ReactNode;
   accessibilityHint?: string;
 };
 
 /** Ligne de liste sélectionnable (zone tactile ≥ 76 points), surlignée quand son détail est ouvert. */
-export const ListRow: React.FC<Props> = ({ title, subtitle, selected, onPress, leading, trailing, accessibilityHint }) => (
+export const ListRow: React.FC<Props> = ({ title, subtitle, selected, onPress, leading, trailing, below, accessibilityHint }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityState={{ selected: !!selected }}
@@ -33,6 +35,7 @@ export const ListRow: React.FC<Props> = ({ title, subtitle, selected, onPress, l
           {subtitle}
         </Text>
       ) : null}
+      {below ? <View style={styles.below}>{below}</View> : null}
     </View>
     {trailing}
   </Pressable>
@@ -69,6 +72,7 @@ const styles = StyleSheet.create({
   text: { flex: 1, gap: 4 },
   title: { fontFamily: theme.fonts.bodySemiBold, fontSize: 17, color: theme.colors.ink },
   subtitle: { fontFamily: theme.fonts.body, fontSize: 15, color: theme.colors.muted },
+  below: { flexDirection: 'row', marginTop: 2 },
   avatar: {
     backgroundColor: theme.colors.cream,
     borderWidth: 1,

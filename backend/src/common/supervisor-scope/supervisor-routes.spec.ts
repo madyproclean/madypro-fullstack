@@ -33,6 +33,7 @@ const SUPERVISOR_ROUTES: Record<string, Protection> = {
   'GET /absences/blocked-periods/list': 'commun',
   'GET /absences/:id': 'perimetre',
   'GET /absences/:id/replacement-suggestions': 'perimetre',
+  'GET /approval-requests/mine': 'soi',
   'GET /absences/leave-balance/:userId': 'perimetre',
   'GET /anomalies/:interventionId': 'perimetre',
   'GET /attendance': 'perimetre',

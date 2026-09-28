@@ -178,13 +178,73 @@ export class ApprovalsService {
       }),
       this.prisma.approvalRequest.count({ where }),
     ]);
+    const summaries = await this.describeInterventionRequests(items);
     const withNames = items.map((item) => ({
       ...item,
       requestedByName: item.requestedById
         ? this.usersService.findOne(item.requestedById)?.name ?? item.requestedById
         : 'Génération automatique',
       reviewedByName: item.reviewedById ? this.usersService.findOne(item.reviewedById)?.name ?? item.reviewedById : undefined,
+      summary: summaries.get(item.id),
     }));
     return { items: withNames, total, page, pageSize };
+  }
+
+  /**
+   * Résumé lisible des demandes portant sur une intervention (site, créneau, changement demandé),
+   * recalculé à la lecture : le résumé saisi à la création n'est pas conservé en base.
+   */
+  private async describeInterventionRequests(
+    items: { id: string; actionType: string; entityType: string; entityId: string | null; payload: unknown; previousState: unknown }[],
+  ) {
+    const interventionIds = items.filter((i) => i.entityType === 'Intervention' && i.entityId).map((i) => i.entityId as string);
+    const payloadOf = (item: { payload: unknown }) => (item.payload ?? {}) as Record<string, any>;
+    const createdSiteIds = items.filter((i) => i.actionType === 'CREATE_INTERVENTION').map((i) => payloadOf(i).siteId).filter(Boolean);
+    const [interventions, sites] = await Promise.all([
+      this.prisma.intervention.findMany({
+        where: { id: { in: interventionIds } },
+        select: { id: true, date: true, startTime: true, endTime: true, site: { select: { name: true } } },
+      }),
+      this.prisma.site.findMany({ where: { id: { in: createdSiteIds } }, select: { id: true, name: true } }),
+    ]);
+    const interventionById = new Map(interventions.map((i) => [i.id, i]));
+    const siteName = new Map(sites.map((s) => [s.id, s.name]));
+    // Les dates d'intervention sont stockées à minuit UTC : on les lit en UTC pour garder le bon jour.
+    const day = (value: Date | string) =>
+      new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+        typeof value === 'string' ? new Date(`${value.slice(0, 10)}T00:00:00Z`) : value,
+      );
+    const slot = (date: Date | string, start: string, end: string) => `${day(date)} ${start}–${end}`;
+    const names = (ids: unknown) =>
+      Array.isArray(ids) ? ids.map((id) => this.usersService.findOne(String(id))?.name ?? 'Agent inconnu').join(', ') : '';
+
+    const summaries = new Map<string, string>();
+    for (const item of items) {
+      const payload = payloadOf(item);
+      if (item.actionType === 'CREATE_INTERVENTION' && payload.date) {
+        const nature = payload.subType ? ` · ${payload.subType}` : '';
+        summaries.set(item.id, `${siteName.get(payload.siteId) ?? 'Site'} · ${slot(payload.date, payload.startTime, payload.endTime)}${nature}`);
+        continue;
+      }
+      const intervention = item.entityId ? interventionById.get(item.entityId) : undefined;
+      if (!intervention) continue;
+      // Créneau d'avant la demande quand il est connu (une fois approuvée, l'intervention porte déjà le nouveau).
+      const before = (item.previousState ?? {}) as Record<string, any>;
+      const base = `${intervention.site.name} · ${slot(
+        before.date ?? intervention.date,
+        before.startTime ?? intervention.startTime,
+        before.endTime ?? intervention.endTime,
+      )}`;
+      let change = '';
+      if (item.actionType === 'UPDATE_INTERVENTION_SCHEDULE' && (payload.date || payload.startTime || payload.endTime)) {
+        change = ` → ${slot(payload.date ?? intervention.date, payload.startTime ?? intervention.startTime, payload.endTime ?? intervention.endTime)}`;
+      } else if ((item.actionType === 'ASSIGN_AGENT' || item.actionType === 'UNASSIGN_AGENT') && payload.agentIds) {
+        change = ` → ${names(payload.agentIds) || 'aucun agent'}`;
+      } else if (item.actionType === 'CANCEL_INTERVENTION' && payload.observation) {
+        change = ` · motif : ${payload.observation}`;
+      }
+      summaries.set(item.id, base + change);
+    }
+    return summaries;
   }
 }

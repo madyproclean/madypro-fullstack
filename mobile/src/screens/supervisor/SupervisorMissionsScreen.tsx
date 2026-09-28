@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { theme } from '@/config/theme';
@@ -11,6 +11,7 @@ import { ListRow } from '@/components/supervisor/ListRow';
 import { Segmented } from '@/components/supervisor/Segmented';
 import { SplitView } from '@/components/supervisor/SplitView';
 import { MissionDetail } from '@/components/supervisor/MissionDetail';
+import { MissionRequestSheet } from '@/components/supervisor/MissionRequestSheet';
 import { addDays, formatClock, formatDayLong, missionStatus, toISODate } from '@/components/supervisor/format';
 import { fetchInterventions } from '@/services/api/interventions.api';
 import { Intervention } from '@/types/intervention';
@@ -36,6 +37,7 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const inFlight = useRef(false);
 
   // Ouverture directe d'une mission (depuis « Aujourd'hui », la carte ou une notification).
@@ -137,6 +139,15 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
         updatedAt={updatedAt}
         onRefresh={load}
         right={
+          <>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setCreating(true)}
+            style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.7 }]}
+          >
+            <Ionicons name="add" size={20} color="#fff" />
+            <Text style={styles.newButtonLabel}>Nouvelle mission</Text>
+          </Pressable>
           <Segmented
             accessibilityLabel="Période"
             value={range}
@@ -149,8 +160,10 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
               { value: 'week', label: 'Semaine' },
             ]}
           />
+          </>
         }
       />
+      <MissionRequestSheet kind={creating ? 'create' : null} onClose={() => setCreating(false)} />
       <SplitView
         list={list}
         detail={selectedId ? <MissionDetail interventionId={selectedId} onChanged={load} /> : null}
@@ -174,6 +187,16 @@ const styles = StyleSheet.create({
   groupTitle: { fontFamily: theme.fonts.bodyBold, fontSize: 16, color: theme.colors.ink, marginTop: 4 },
   empty: { fontFamily: theme.fonts.body, fontSize: 16, color: theme.colors.muted, textAlign: 'center' },
   error: { fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.status.absent },
+  newButton: {
+    minHeight: 48,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    backgroundColor: theme.colors.primaryDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  newButtonLabel: { fontFamily: theme.fonts.bodySemiBold, fontSize: 16, color: '#fff' },
   placeholder: {
     flex: 1,
     alignItems: 'center',
