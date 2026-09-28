@@ -5,22 +5,14 @@ import { theme } from '@/config/theme';
 import { useLayout } from '@/hooks/useLayout';
 import { RAIL_COMPACT, RAIL_WIDE, SideRail, SUPERVISOR_SECTIONS } from '@/components/supervisor/SideRail';
 import SupervisorTodayScreen from '@/screens/supervisor/SupervisorTodayScreen';
+import SupervisorMapScreen from '@/screens/supervisor/SupervisorMapScreen';
+import SupervisorMissionsScreen from '@/screens/supervisor/SupervisorMissionsScreen';
 import { SupervisorComingSoonScreen } from '@/screens/supervisor/SupervisorComingSoonScreen';
 import { SupervisorTabParamList } from './types';
 
 const Tabs = createBottomTabNavigator<SupervisorTabParamList>();
 
 // Rubriques livrées aux sprints suivants (voir le plan tablette superviseur).
-const MapScreen = () => (
-  <SupervisorComingSoonScreen title="Carte" icon="map-outline" description="La carte de vos sites et de vos agents en mission." />
-);
-const MissionsScreen = () => (
-  <SupervisorComingSoonScreen
-    title="Missions"
-    icon="list-outline"
-    description="Les missions du jour et de la semaine, leur détail et la validation des missions terminées."
-  />
-);
 const ValidationsScreen = () => (
   <SupervisorComingSoonScreen
     title="Validations"
@@ -60,8 +52,8 @@ export function SupervisorNavigator() {
       tabBar={(props) => <SideRail {...props} compact={!isWide} />}
     >
       <Tabs.Screen name="SupervisorToday" component={SupervisorTodayScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorToday.label }} />
-      <Tabs.Screen name="SupervisorMap" component={MapScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMap.label }} />
-      <Tabs.Screen name="SupervisorMissions" component={MissionsScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMissions.label }} />
+      <Tabs.Screen name="SupervisorMap" component={SupervisorMapScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMap.label }} />
+      <Tabs.Screen name="SupervisorMissions" component={SupervisorMissionsScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMissions.label }} />
       <Tabs.Screen
         name="SupervisorValidations"
         component={ValidationsScreen}

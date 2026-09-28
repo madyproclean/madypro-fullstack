@@ -36,3 +36,34 @@ export type SupervisorToday = {
   };
   tasks: TodayTask[];
 };
+
+/** Position d'un agent en mission (attendance/live-map), déjà filtrée sur les sites du superviseur. */
+export type LiveAgent = {
+  userId: string;
+  agentName: string;
+  interventionId: string;
+  siteId: string;
+  siteName: string;
+  latitude: number;
+  longitude: number;
+  lastSeenAt: string;
+};
+
+export type SupervisedSite = {
+  id: string;
+  name: string;
+  address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  active: boolean;
+};
+
+export type MissionAttendance = {
+  id: string;
+  agent: { id: string; name: string };
+  checkInTime?: string;
+  checkOutTime?: string;
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  checkInPhoto?: string;
+  checkOutPhoto?: string;
+};
