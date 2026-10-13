@@ -546,6 +546,7 @@ export class InterventionsService implements OnModuleInit {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       generatedFromTemplateId: (record as any).generatedFromTemplateId ?? undefined,
+      generatedFromStopId: (record as any).generatedFromStopId ?? undefined,
       batchId: (record as any).batchId ?? undefined,
     };
   }
@@ -1594,10 +1595,20 @@ export class InterventionsService implements OnModuleInit {
       realInterventions.map((i) => [`${i.date.toISOString().slice(0, 10)}:${i.generatedFromStopId}`, i]),
     );
 
+    // Libellés lisibles (prestation, agents) pour les écrans qui n'ont pas le référentiel en mémoire.
+    const categoryIds = [...new Set(flattened.map((o) => o.categoryId).filter((id): id is string => !!id))];
+    const categories = categoryIds.length
+      ? await this.prisma.interventionCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, label: true } })
+      : [];
+    const categoryLabel = new Map(categories.map((c) => [c.id, c.label]));
+    const agentName = (id: string) => this.usersService.findOne(id)?.name ?? 'Agent inconnu';
+
     return flattened.map((occ) => {
       const real = realByKey.get(`${occ.date}:${occ.stopId}`);
       return {
         ...occ,
+        categoryLabel: occ.categoryId ? categoryLabel.get(occ.categoryId) ?? null : null,
+        agents: occ.agentIds.map((id) => ({ id, name: agentName(id) })),
         source: real ? ('real' as const) : ('projected' as const),
         interventionId: real?.id,
         status: real?.status,

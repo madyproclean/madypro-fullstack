@@ -202,3 +202,63 @@ export type ChatMessage = {
 
 /** Discussion avec un agent : dernier message et messages de l'agent pas encore lus. */
 export type ChatThread = { agent: { id: string; name: string }; lastMessage: ChatMessage; unreadCount: number };
+
+// ---------------------------------------------------------------- gabarits et planning
+
+/**
+ * Une occurrence du planning, calculée à partir du gabarit validé d'un site. `projected` : la
+ * mission n'existe pas encore (elle est créée automatiquement peu avant son début) ; `real` :
+ * elle a été créée et `interventionId` permet d'en ouvrir le détail.
+ */
+export type PlanningOccurrence = {
+  date: string;
+  stopId: string;
+  siteId: string;
+  siteName: string;
+  templateId: string;
+  templateLabel: string;
+  categoryId?: string | null;
+  categoryLabel?: string | null;
+  startTime: string;
+  endTime: string;
+  agentIds: string[];
+  agents: Array<{ id: string; name: string }>;
+  source: 'real' | 'projected';
+  interventionId?: string;
+  status?: string;
+};
+
+/** Créneau d'un gabarit : jours (0 = dimanche), horaires, prestation et agents habituels. */
+export type TemplateStop = {
+  id?: string;
+  daysOfWeek: number[];
+  intervalWeeks: number;
+  specificDate?: string | null;
+  categoryId?: string | null;
+  startTime: string;
+  endTime: string;
+  agentIds: string[];
+  order?: number;
+};
+
+/** Gabarit d'un site (un seul par site). Non validé : il ne génère aucune mission. */
+export type SiteTemplate = {
+  id: string;
+  label: string;
+  siteId: string;
+  startDate: string;
+  endDate: string | null;
+  active: boolean;
+  validatedAt: string | null;
+  stops: TemplateStop[];
+};
+
+/** Prestation prévue sur un site (catégorie + horaires habituels + checklist). */
+export type SitePrestation = {
+  id: string;
+  categoryId: string;
+  startTime: string;
+  endTime: string;
+  active: boolean;
+  category: { id: string; label: string };
+};

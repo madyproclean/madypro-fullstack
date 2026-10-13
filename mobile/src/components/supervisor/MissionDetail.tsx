@@ -14,6 +14,7 @@ import { Anomaly } from '@/types/anomaly';
 import { ApprovalRequest, MissionAttendance } from '@/types/supervision';
 import { ANOMALY_LABELS, APPROVAL_ACTION_LABELS, formatClock, formatDayLong, missionStatus } from './format';
 import { MissionRequestKind, MissionRequestSheet } from './MissionRequestSheet';
+import { TemplateEditorSheet } from './TemplateEditorSheet';
 
 type Props = {
   interventionId: string;
@@ -41,6 +42,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [requestKind, setRequestKind] = useState<MissionRequestKind | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -275,15 +277,21 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
 
       {canRequestChange ? (
         <View style={styles.actions}>
-          {mission.status === 'PLANNED' ? (
-            <ActionButton label="Déplacer" icon="calendar-outline" onPress={() => setRequestKind('reschedule')} />
-          ) : null}
-          <ActionButton label="Changer les agents" icon="people-outline" onPress={() => setRequestKind('agents')} />
+          {/* Une mission se modifie par son gabarit ; seule l'annulation ponctuelle reste possible ici. */}
+          <ActionButton label="Modifier le gabarit" icon="git-branch-outline" onPress={() => setEditingTemplate(true)} />
           {mission.status === 'PLANNED' ? (
             <ActionButton label="Annuler la mission" icon="close-circle-outline" onPress={() => setRequestKind('cancel')} />
           ) : null}
         </View>
       ) : null}
+
+      <TemplateEditorSheet
+        visible={editingTemplate}
+        siteId={mission.siteId}
+        focusStopId={mission.generatedFromStopId}
+        onClose={() => setEditingTemplate(false)}
+        onSaved={() => onChanged?.()}
+      />
 
       <MissionRequestSheet
         kind={requestKind}

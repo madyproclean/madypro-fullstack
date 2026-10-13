@@ -6,8 +6,12 @@ import {
   ChatThread,
   LiveAgent,
   MissionAttendance,
+  PlanningOccurrence,
   ReplacementSuggestions,
   SiteFile,
+  SitePrestation,
+  SiteTemplate,
+  TemplateStop,
   SiteQrCode,
   SupervisedSite,
   TeamAgent,
@@ -96,17 +100,6 @@ export function requestMissionCancel(token: string, interventionId: string, obse
   });
 }
 
-export function requestMissionCreate(
-  token: string,
-  mission: { siteId: string; date: string; startTime: string; endTime: string; agentIds: string[]; type: 'REGULAR' | 'PUNCTUAL'; subType?: string },
-) {
-  return apiFetch<ApprovalRequest>({
-    path: '/interventions',
-    token,
-    options: { method: 'POST', body: JSON.stringify(mission) },
-  });
-}
-
 /** Demandes déposées par le superviseur connecté, plus récentes d'abord. */
 export async function listMyRequests(token: string) {
   const page = await apiFetch<Page<ApprovalRequest>>({ path: '/approval-requests/mine?pageSize=100', token });
@@ -169,5 +162,54 @@ export function markChatRead(token: string, agentId: string) {
     path: `/chat/threads/${encodeURIComponent(agentId)}/read`,
     token,
     options: { method: 'PATCH' },
+  });
+}
+
+// ---------------------------------------------------------------- gabarits et planning
+
+/** Planning issu des gabarits validés de ses sites, missions déjà créées comprises. */
+export function getPlanning(token: string, startDate: string, endDate: string) {
+  return apiFetch<PlanningOccurrence[]>({
+    path: `/interventions/planning?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+    token,
+  });
+}
+
+/** Gabarits de ses sites (un par site au plus). */
+export function listSiteTemplates(token: string) {
+  return apiFetch<SiteTemplate[]>({ path: '/interventions/templates/list', token });
+}
+
+/** Prestations prévues sur le site : base des créneaux du gabarit. */
+export function listSitePrestations(token: string, siteId: string) {
+  return apiFetch<SitePrestation[]>({ path: `/sites/${encodeURIComponent(siteId)}/categories`, token });
+}
+
+type TemplateInput = { label: string; siteId: string; stops: TemplateStop[] };
+
+/**
+ * Enregistre le gabarit d'un site (création ou remplacement de ses créneaux). Pour un
+ * superviseur, le gabarit repasse « à valider » : l'administrateur doit l'approuver.
+ */
+export function saveSiteTemplate(token: string, templateId: string | null, input: TemplateInput) {
+  // La liste envoyée remplace celle du serveur : un créneau « date précise » (créé sur le web)
+  // doit être renvoyé tel quel pour ne pas être supprimé.
+  const stops = input.stops.map(({ id, daysOfWeek, intervalWeeks, specificDate, categoryId, startTime, endTime, agentIds }, order) => ({
+    ...(id ? { id } : {}),
+    ...(specificDate ? { specificDate: specificDate.slice(0, 10) } : { daysOfWeek }),
+    intervalWeeks,
+    ...(categoryId ? { categoryId } : {}),
+    startTime,
+    endTime,
+    agentIds,
+    order,
+  }));
+  return apiFetch<SiteTemplate>({
+    path: templateId ? `/interventions/templates/${templateId}` : '/interventions/templates',
+    token,
+    options: {
+      method: templateId ? 'PATCH' : 'POST',
+      body: JSON.stringify(templateId ? { label: input.label, stops } : { ...input, stops }),
+    },
   });
 }

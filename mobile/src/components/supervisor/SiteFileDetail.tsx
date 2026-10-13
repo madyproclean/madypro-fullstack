@@ -10,6 +10,7 @@ import { SiteFile } from '@/types/supervision';
 import { ActionButton, DetailSection, detailStyles as styles, InfoLine } from './DetailBlocks';
 import { callPhone, openDirections, sendSms } from './contact';
 import { ANOMALY_LABELS, formatDayShort, toISODate } from './format';
+import { TemplateEditorSheet } from './TemplateEditorSheet';
 
 const MISSION_STATUS: Record<string, string> = {
   PLANNED: 'À venir',
@@ -43,6 +44,7 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
   const [qr, setQr] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [openChecklist, setOpenChecklist] = useState<string | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -125,6 +127,16 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
           />
         </View>
         {actionError ? <Text accessibilityRole="alert" style={styles.errorText}>{actionError}</Text> : null}
+
+        <DetailSection title="Gabarit du site">
+          <Text style={styles.muted}>
+            Toutes les missions du site en découlent : pour ajouter, déplacer une mission ou changer ses agents, modifiez le
+            gabarit.
+          </Text>
+          <View style={styles.actions}>
+            <ActionButton label="Modifier le gabarit" icon="git-branch-outline" onPress={() => setEditingTemplate(true)} />
+          </View>
+        </DetailSection>
 
         <DetailSection title="Accès">
           {file.accessInstructions ? (
@@ -265,6 +277,7 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
           )}
         </DetailSection>
       </ScrollView>
+      <TemplateEditorSheet visible={editingTemplate} siteId={file.id} onClose={() => setEditingTemplate(false)} />
     </View>
   );
 };

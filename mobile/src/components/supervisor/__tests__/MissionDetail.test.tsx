@@ -78,4 +78,13 @@ describe('clôture d’une mission', () => {
     render(<MissionDetail interventionId="int-z" />);
     expect(await screen.findByText(/n'est pas sur l'un de vos sites/)).toBeTruthy();
   });
+
+  it('se modifie par son gabarit : ni déplacement ni changement d’agents isolé', async () => {
+    (fetchInterventionById as jest.Mock).mockResolvedValue(mission({ status: 'PLANNED' }));
+    render(<MissionDetail interventionId="int-1" />);
+    expect(await screen.findByText('Modifier le gabarit')).toBeTruthy();
+    expect(screen.queryByText('Déplacer')).toBeNull();
+    expect(screen.queryByText('Changer les agents')).toBeNull();
+    expect(screen.getByText('Annuler la mission')).toBeTruthy();
+  });
 });

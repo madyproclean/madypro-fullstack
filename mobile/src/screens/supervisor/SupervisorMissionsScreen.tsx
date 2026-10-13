@@ -13,9 +13,12 @@ import { ListRow } from '@/components/supervisor/ListRow';
 import { Segmented } from '@/components/supervisor/Segmented';
 import { SplitView } from '@/components/supervisor/SplitView';
 import { MissionDetail } from '@/components/supervisor/MissionDetail';
-import { MissionRequestSheet } from '@/components/supervisor/MissionRequestSheet';
+import { PlannedMissionDetail } from '@/components/supervisor/PlannedMissionDetail';
+import { TemplateEditorSheet } from '@/components/supervisor/TemplateEditorSheet';
 import { addDays, formatDayLong, missionStatus, toISODate } from '@/components/supervisor/format';
 import { fetchInterventions } from '@/services/api/interventions.api';
+import { getPlanning } from '@/services/api/supervision.api';
+import { PlanningOccurrence } from '@/types/supervision';
 import { Intervention } from '@/types/intervention';
 import { SupervisorTabParamList } from '@/navigation/types';
 
@@ -34,14 +37,22 @@ const STATUS_ORDER: Record<string, number> = {
 
 const RowGap = () => <View style={{ height: 10 }} />;
 
+/** Ligne du planning : mission déjà créée, ou mission prévue par le gabarit (pas encore créée). */
+type Row =
+  | { key: string; kind: 'real'; date: string; startTime: string; mission: Intervention }
+  | { key: string; kind: 'planned'; date: string; startTime: string; occurrence: PlanningOccurrence };
+
+const plannedKey = (o: PlanningOccurrence) => `planned:${o.date}:${o.stopId}`;
+
 export default function SupervisorMissionsScreen({ route, navigation }: Props) {
   const { token, user } = useAuthContext();
   const [range, setRange] = useState<Range>('day');
   const [missions, setMissions] = useState<Intervention[]>([]);
+  const [planned, setPlanned] = useState<PlanningOccurrence[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(false);
   const inFlight = useRef(false);
 
   // Ouverture directe d'une mission (depuis « Aujourd'hui », la carte ou une notification).
@@ -59,13 +70,21 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
     const today = new Date();
     const startDate = toISODate(today);
     const endDate = toISODate(range === 'day' ? today : addDays(today, 6));
-    const show = (list: Intervention[]) => setMissions(list.filter((m) => m.status !== 'CANCELLED'));
+    const show = ([list, plan]: [Intervention[], PlanningOccurrence[]]) => {
+      setMissions(list.filter((m) => m.status !== 'CANCELLED'));
+      // Les occurrences déjà créées figurent dans `list` ; on n'ajoute que celles à venir.
+      setPlanned(plan.filter((o) => o.source === 'projected'));
+    };
     try {
       // La date fait partie de la clé : jamais les missions d'hier présentées comme celles du jour.
       const result = await loadWithCache(
         user?.id,
-        `missions:${startDate}:${endDate}`,
-        () => fetchInterventions(token, { startDate, endDate, pageSize: 500 }),
+        `planning:${startDate}:${endDate}`,
+        () =>
+          Promise.all([
+            fetchInterventions(token, { startDate, endDate, pageSize: 500 }),
+            getPlanning(token, startDate, endDate),
+          ]),
         (cached) => show(cached.value),
       );
       show(result.value);
@@ -82,30 +101,30 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
   const refreshControl = usePullToRefresh(load);
 
   const groups = useMemo(() => {
-    const byDate = new Map<string, Intervention[]>();
-    [...missions]
-      .sort(
-        (a, b) =>
-          a.date.localeCompare(b.date) ||
-          (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
-          a.startTime.localeCompare(b.startTime),
-      )
-      .forEach((m) => {
-        const day = byDate.get(m.date);
-        if (day) day.push(m);
-        else byDate.set(m.date, [m]);
-      });
+    const rows: Row[] = [
+      ...missions.map((m) => ({ key: m.id, kind: 'real' as const, date: m.date, startTime: m.startTime, mission: m })),
+      ...planned.map((o) => ({ key: plannedKey(o), kind: 'planned' as const, date: o.date, startTime: o.startTime, occurrence: o })),
+    ];
+    const rank = (r: Row) => (r.kind === 'real' ? STATUS_ORDER[r.mission.status] ?? 9 : STATUS_ORDER.PLANNED);
+    rows.sort((a, b) => a.date.localeCompare(b.date) || rank(a) - rank(b) || a.startTime.localeCompare(b.startTime));
+    const byDate = new Map<string, Row[]>();
+    rows.forEach((r) => {
+      const day = byDate.get(r.date);
+      if (day) day.push(r);
+      else byDate.set(r.date, [r]);
+    });
     return [...byDate.entries()].map(([date, data]) => ({ date, data }));
-  }, [missions]);
+  }, [missions, planned]);
 
   const toValidate = missions.filter((m) => m.status === 'NEEDS_REVIEW').length;
   const selected = missions.find((m) => m.id === selectedId);
+  const selectedPlanned = planned.find((o) => plannedKey(o) === selectedId);
 
   // Liste virtualisée : une semaine peut compter des centaines de missions sur une tablette modeste.
   const list = (
     <SectionList
       sections={groups}
-      keyExtractor={(mission) => mission.id}
+      keyExtractor={(row) => row.key}
       contentContainerStyle={styles.list}
       refreshControl={refreshControl}
       stickySectionHeadersEnabled={false}
@@ -120,7 +139,9 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
           ) : null}
           {groups.length === 0 && !error ? (
             <Text style={styles.empty}>
-              {range === 'day' ? "Aucune mission aujourd'hui sur vos sites." : 'Aucune mission cette semaine sur vos sites.'}
+              {range === 'day'
+                ? "Aucune mission aujourd'hui sur vos sites. Les missions découlent des gabarits des sites."
+                : 'Aucune mission cette semaine sur vos sites. Les missions découlent des gabarits des sites.'}
             </Text>
           ) : null}
         </>
@@ -133,7 +154,21 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
         ) : null
       }
       ItemSeparatorComponent={RowGap}
-      renderItem={({ item: mission }) => {
+      renderItem={({ item: row }) => {
+        if (row.kind === 'planned') {
+          const o = row.occurrence;
+          const who = o.agents.length ? o.agents.map((x) => x.name.split(' ')[0]).join(', ') : 'aucun agent';
+          return (
+            <ListRow
+              title={o.siteName}
+              subtitle={`${o.startTime} – ${o.endTime} · ${o.categoryLabel ? `${o.categoryLabel} · ` : ''}${who}`}
+              selected={row.key === selectedId}
+              onPress={() => setSelectedId(row.key)}
+              trailing={<StatusPill strong label="Prévue" tone="neutral" />}
+            />
+          );
+        }
+        const mission = row.mission;
         const status = missionStatus(mission);
         const agentCount = mission.agents.length;
         return (
@@ -166,11 +201,12 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
           <>
           <Pressable
             accessibilityRole="button"
-            onPress={() => setCreating(true)}
+            accessibilityHint="Ajouter, déplacer ou modifier les créneaux d'un site"
+            onPress={() => setEditingTemplate(true)}
             style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.7 }]}
           >
-            <Ionicons name="add" size={20} color="#fff" />
-            <Text style={styles.newButtonLabel}>Nouvelle mission</Text>
+            <Ionicons name="git-branch-outline" size={20} color="#fff" />
+            <Text style={styles.newButtonLabel}>Modifier un gabarit</Text>
           </Pressable>
           <Segmented
             accessibilityLabel="Période"
@@ -178,6 +214,7 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
             onChange={(next) => {
               setRange(next);
               setMissions([]);
+              setPlanned([]);
             }}
             options={[
               { value: 'day', label: 'Jour' },
@@ -187,11 +224,17 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
           </>
         }
       />
-      <MissionRequestSheet kind={creating ? 'create' : null} onClose={() => setCreating(false)} />
+      <TemplateEditorSheet visible={editingTemplate} onClose={() => setEditingTemplate(false)} onSaved={load} />
       <SplitView
         list={list}
-        detail={selectedId ? <MissionDetail interventionId={selectedId} onChanged={load} /> : null}
-        detailTitle={selected?.siteName}
+        detail={
+          selectedPlanned ? (
+            <PlannedMissionDetail occurrence={selectedPlanned} onChanged={load} />
+          ) : selectedId ? (
+            <MissionDetail interventionId={selectedId} onChanged={load} />
+          ) : null
+        }
+        detailTitle={selectedPlanned?.siteName ?? selected?.siteName}
         onCloseDetail={() => setSelectedId(null)}
         emptyDetail={
           <View style={styles.placeholder}>
