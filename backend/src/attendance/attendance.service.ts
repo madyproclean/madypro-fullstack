@@ -190,6 +190,20 @@ export class AttendanceService implements OnModuleInit {
       },
     });
 
+    // Un agent dont l'absence est validée pour ce jour n'est pas « en retard » : son
+    // remplacement relève de la mission non couverte, pas d'une alerte de retard.
+    const assignedIds = [...new Set(interventions.flatMap((i) => i.assignments.map((a) => a.userId)))];
+    const absentIds = new Set(
+      assignedIds.length
+        ? (
+            await this.prisma.absence.findMany({
+              where: { userId: { in: assignedIds }, status: 'APPROVED', from: { lte: dayEnd }, to: { gte: dayStart } },
+              select: { userId: true },
+            })
+          ).map((a) => a.userId)
+        : [],
+    );
+
     for (const intervention of interventions) {
       if (!intervention.assignments.length) continue;
       const toleranceMinutes = (intervention.site as any).toleranceMinutes ?? defaultToleranceMinutes;
@@ -202,7 +216,7 @@ export class AttendanceService implements OnModuleInit {
 
       for (const assignment of intervention.assignments) {
         const key = `${intervention.id}:${assignment.userId}`;
-        if (this.lateNotified.has(key)) continue;
+        if (this.lateNotified.has(key) || absentIds.has(assignment.userId)) continue;
         const attendance = intervention.attendances.find((a) => a.userId === assignment.userId);
         if (attendance?.checkInTime) continue;
         this.lateNotified.add(key);
@@ -215,6 +229,9 @@ export class AttendanceService implements OnModuleInit {
               targetId: supervisorId,
               title: 'Retard sur intervention',
               message: `${agentName} n'a pas démarré "${intervention.site.name}" (prévu ${intervention.startTime}).`,
+              category: 'late',
+              // Ouvre la mission concernée sur la tablette superviseur.
+              data: { interventionId: intervention.id },
             } as any);
           } catch (err: any) {
             this.logger.warn(`Alerte retard échouée (${key} -> superviseur ${supervisorId}): ${err?.message || err}`);

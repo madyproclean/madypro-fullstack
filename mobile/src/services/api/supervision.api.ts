@@ -1,10 +1,16 @@
 import {
+  AgentFile,
   AgentOption,
   ApprovalRequest,
+  ChatMessage,
+  ChatThread,
   LiveAgent,
   MissionAttendance,
   ReplacementSuggestions,
+  SiteFile,
+  SiteQrCode,
   SupervisedSite,
+  TeamAgent,
   SupervisorToday,
   TeamAbsence,
 } from '../../types/supervision';
@@ -115,4 +121,53 @@ export async function listActiveAgents(token: string) {
 
 export function getTeamAbsence(token: string, id: string) {
   return apiFetch<TeamAbsence>({ path: `/absences/${id}`, token });
+}
+
+// ---------------------------------------------------------------- équipe et sites
+
+/** Agents du superviseur avec leur situation du jour. */
+export function getTeam(token: string) {
+  return apiFetch<TeamAgent[]>({ path: '/supervision/agents', token });
+}
+
+export function getAgentFile(token: string, agentId: string) {
+  return apiFetch<AgentFile>({ path: `/supervision/agents/${encodeURIComponent(agentId)}`, token });
+}
+
+export function getSiteFile(token: string, siteId: string) {
+  return apiFetch<SiteFile>({ path: `/supervision/sites/${encodeURIComponent(siteId)}`, token });
+}
+
+/** QR code de pointage du site (à afficher quand un agent ne peut pas scanner l'affiche). */
+export function getSiteQrCode(token: string, siteId: string) {
+  return apiFetch<SiteQrCode>({ path: `/sites/${encodeURIComponent(siteId)}/qr-code`, token });
+}
+
+// ---------------------------------------------------------------- messagerie
+
+/** Discussions ayant au moins un message, plus récentes d'abord (agents du superviseur seulement). */
+export async function listChatThreads(token: string) {
+  const threads = await apiFetch<ChatThread[] | null>({ path: '/chat/threads', token });
+  return Array.isArray(threads) ? threads : [];
+}
+
+export async function getChatThread(token: string, agentId: string) {
+  const messages = await apiFetch<ChatMessage[] | null>({ path: `/chat/threads/${encodeURIComponent(agentId)}`, token });
+  return Array.isArray(messages) ? messages : [];
+}
+
+export function sendChatMessage(token: string, agentId: string, body: string) {
+  return apiFetch<ChatMessage>({
+    path: `/chat/threads/${encodeURIComponent(agentId)}/messages`,
+    token,
+    options: { method: 'POST', body: JSON.stringify({ body }) },
+  });
+}
+
+export function markChatRead(token: string, agentId: string) {
+  return apiFetch<{ success: boolean }>({
+    path: `/chat/threads/${encodeURIComponent(agentId)}/read`,
+    token,
+    options: { method: 'PATCH' },
+  });
 }

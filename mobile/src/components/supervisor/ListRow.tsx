@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   text: { flex: 1, gap: 4 },
   title: { fontFamily: theme.fonts.bodySemiBold, fontSize: 17, color: theme.colors.ink },
   subtitle: { fontFamily: theme.fonts.body, fontSize: 15, color: theme.colors.muted },
-  below: { flexDirection: 'row', marginTop: 2 },
+  below: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
   avatar: {
     backgroundColor: theme.colors.cream,
     borderWidth: 1,

@@ -22,13 +22,17 @@ export const SUPERVISOR_SECTIONS: Record<
   SupervisorMessages: { label: 'Messages', short: 'Messages', icon: 'chatbubble-outline' },
 };
 
-type Props = BottomTabBarProps & { compact: boolean };
+type Props = BottomTabBarProps & {
+  compact: boolean;
+  /** Pastilles par rubrique (ex. messages non lus) ; masquées à zéro. */
+  badges?: Partial<Record<keyof SupervisorTabParamList, number>>;
+};
 
 /**
  * Navigation latérale fixe de l'espace superviseur. Rendue comme « barre d'onglets » du
  * navigateur à onglets, mais positionnée à gauche (les écrans sont décalés d'autant).
  */
-export const SideRail: React.FC<Props> = ({ state, navigation, compact }) => {
+export const SideRail: React.FC<Props> = ({ state, navigation, compact, badges }) => {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuthContext();
   const width = compact ? RAIL_COMPACT : RAIL_WIDE;
@@ -56,12 +60,13 @@ export const SideRail: React.FC<Props> = ({ state, navigation, compact }) => {
         const meta = SUPERVISOR_SECTIONS[route.name as keyof SupervisorTabParamList];
         const focused = state.index === index;
         const color = focused ? theme.colors.primaryDark : theme.colors.muted;
+        const badge = badges?.[route.name as keyof SupervisorTabParamList] ?? 0;
         return (
           <Pressable
             key={route.key}
             accessibilityRole="menuitem"
             accessibilityState={{ selected: focused }}
-            accessibilityLabel={meta.label}
+            accessibilityLabel={badge ? `${meta.label}, ${badge} non lu${badge > 1 ? 's' : ''}` : meta.label}
             onPress={() => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
               if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
@@ -72,7 +77,14 @@ export const SideRail: React.FC<Props> = ({ state, navigation, compact }) => {
               pressed && styles.itemPressed,
             ]}
           >
-            <Ionicons name={meta.icon} size={compact ? 26 : 22} color={color} />
+            <View>
+              <Ionicons name={meta.icon} size={compact ? 26 : 22} color={color} />
+              {badge ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+                </View>
+              ) : null}
+            </View>
             <Text
               numberOfLines={1}
               style={[compact ? styles.labelCompact : styles.label, { color }, focused && styles.labelActive]}
@@ -143,5 +155,18 @@ const styles = StyleSheet.create({
   labelCompact: { fontFamily: theme.fonts.bodyMedium, fontSize: 12 },
   labelActive: { fontFamily: theme.fonts.bodySemiBold },
   footer: { marginTop: 'auto', borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 12, gap: 6 },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: theme.colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { fontFamily: theme.fonts.bodyBold, fontSize: 11, color: '#fff' },
   userName: { fontFamily: theme.fonts.bodySemiBold, fontSize: 15, color: theme.colors.ink, paddingHorizontal: 14 },
 });

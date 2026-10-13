@@ -124,3 +124,81 @@ export type ApprovalRequest = {
 };
 
 export type AgentOption = { id: string; name: string; active?: boolean };
+
+// ---------------------------------------------------------------- équipe, sites, messages
+
+/** Où en est un agent aujourd'hui sur les sites du superviseur. */
+export type AgentDayStatus = 'ON_SITE' | 'LATE' | 'PLANNED' | 'DONE' | 'ABSENT' | 'OFF';
+
+export type AgentDay = { status: AgentDayStatus; siteName?: string; startTime?: string; endTime?: string };
+
+export type TeamAgent = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string;
+  today: AgentDay;
+  /** Certifications expirées ou expirant dans les 30 jours. */
+  expiringCertifications: number;
+};
+
+export type AgentFile = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string;
+  active: boolean;
+  today: AgentDay;
+  /** En minutes : prévues (missions) et pointées, sur les sites du superviseur. */
+  hours: { week: { planned: number; worked: number }; month: { planned: number; worked: number } };
+  certifications: Array<{ id: string; label: string; obtainedAt: string | null; expiresAt: string | null }>;
+  upcoming: Array<{
+    interventionId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    siteId: string;
+    siteName: string;
+    status: string;
+  }>;
+  absences: Array<{ id: string; type: string; status: 'PENDING' | 'APPROVED' | 'REJECTED'; from: string; to: string }>;
+  sites: Array<{ id: string; name: string }>;
+};
+
+export type SiteFile = {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  timeWindow: string | null;
+  accessInstructions: string | null;
+  accessCode: string | null;
+  contact: { name: string | null; phone: string | null; email: string | null };
+  checklists: Array<{ id: string; label: string; startTime: string; endTime: string; items: Array<{ id: string; label: string }> }>;
+  incidents: Array<{
+    id: string;
+    type: string;
+    title: string | null;
+    description: string;
+    status: 'NEW' | 'RESOLVED';
+    createdAt: string;
+    reportedBy: string;
+  }>;
+  today: Array<{ interventionId: string; startTime: string; endTime: string; status: string; agents: Array<{ id: string; name: string }> }>;
+  team: Array<{ id: string; name: string; phone: string | null }>;
+};
+
+export type SiteQrCode = { siteId: string; code: string; qrCodeDataUrl: string };
+
+export type ChatMessage = {
+  id: string;
+  threadUserId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  readAt?: string | null;
+};
+
+/** Discussion avec un agent : dernier message et messages de l'agent pas encore lus. */
+export type ChatThread = { agent: { id: string; name: string }; lastMessage: ChatMessage; unreadCount: number };

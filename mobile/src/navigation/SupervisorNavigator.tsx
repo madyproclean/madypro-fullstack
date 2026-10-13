@@ -1,29 +1,45 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
+import { AppState } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '@/config/theme';
 import { useLayout } from '@/hooks/useLayout';
+import { useAuthContext } from '@/context/AuthContext';
+import { listChatThreads } from '@/services/api/supervision.api';
 import { RAIL_COMPACT, RAIL_WIDE, SideRail, SUPERVISOR_SECTIONS } from '@/components/supervisor/SideRail';
 import SupervisorTodayScreen from '@/screens/supervisor/SupervisorTodayScreen';
 import SupervisorMapScreen from '@/screens/supervisor/SupervisorMapScreen';
 import SupervisorMissionsScreen from '@/screens/supervisor/SupervisorMissionsScreen';
 import SupervisorValidationsScreen from '@/screens/supervisor/SupervisorValidationsScreen';
-import { SupervisorComingSoonScreen } from '@/screens/supervisor/SupervisorComingSoonScreen';
+import SupervisorTeamScreen from '@/screens/supervisor/SupervisorTeamScreen';
+import SupervisorMessagesScreen from '@/screens/supervisor/SupervisorMessagesScreen';
 import { SupervisorTabParamList } from './types';
 
 const Tabs = createBottomTabNavigator<SupervisorTabParamList>();
 
-// Rubriques livrées aux sprints suivants (voir le plan tablette superviseur).
-const TeamScreen = () => (
-  <SupervisorComingSoonScreen
-    title="Équipe et sites"
-    icon="people-outline"
-    description="Les fiches de vos agents et de vos sites, avec appel et SMS en un geste."
-  />
-);
-const MessagesScreen = () => (
-  <SupervisorComingSoonScreen title="Messages" icon="chatbubble-outline" description="Les discussions avec vos agents." />
-);
+const UNREAD_REFRESH_MS = 30_000;
+
+/** Messages d'agents non lus, toutes discussions confondues (pastille de la navigation). */
+function useUnreadMessages() {
+  const { token } = useAuthContext();
+  const [count, setCount] = useState(0);
+  const refresh = useCallback(() => {
+    if (!token || AppState.currentState !== 'active') return;
+    listChatThreads(token)
+      .then((threads) => setCount(threads.reduce((sum, t) => sum + t.unreadCount, 0)))
+      .catch(() => undefined);
+  }, [token]);
+  React.useEffect(() => {
+    refresh();
+    const timer = setInterval(refresh, UNREAD_REFRESH_MS);
+    const sub = AppState.addEventListener('change', (next) => next === 'active' && refresh());
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [refresh]);
+  return count;
+}
 
 /**
  * Espace superviseur : navigation latérale fixe (réduite aux icônes sous 900 points de large)
@@ -33,6 +49,7 @@ export function SupervisorNavigator() {
   const { isWide } = useLayout();
   const insets = useSafeAreaInsets();
   const railWidth = isWide ? RAIL_WIDE : RAIL_COMPACT;
+  const unreadMessages = useUnreadMessages();
 
   return (
     <Tabs.Navigator
@@ -43,7 +60,7 @@ export function SupervisorNavigator() {
         paddingRight: insets.right,
         backgroundColor: theme.colors.cream,
       }}
-      tabBar={(props) => <SideRail {...props} compact={!isWide} />}
+      tabBar={(props) => <SideRail {...props} compact={!isWide} badges={{ SupervisorMessages: unreadMessages }} />}
     >
       <Tabs.Screen name="SupervisorToday" component={SupervisorTodayScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorToday.label }} />
       <Tabs.Screen name="SupervisorMap" component={SupervisorMapScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMap.label }} />
@@ -53,8 +70,8 @@ export function SupervisorNavigator() {
         component={SupervisorValidationsScreen}
         options={{ title: SUPERVISOR_SECTIONS.SupervisorValidations.label }}
       />
-      <Tabs.Screen name="SupervisorTeam" component={TeamScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorTeam.label }} />
-      <Tabs.Screen name="SupervisorMessages" component={MessagesScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMessages.label }} />
+      <Tabs.Screen name="SupervisorTeam" component={SupervisorTeamScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorTeam.label }} />
+      <Tabs.Screen name="SupervisorMessages" component={SupervisorMessagesScreen} options={{ title: SUPERVISOR_SECTIONS.SupervisorMessages.label }} />
     </Tabs.Navigator>
   );
 }

@@ -36,7 +36,7 @@ export type SupervisorTabParamList = {
   SupervisorMap: undefined;
   SupervisorMissions: { interventionId?: string } | undefined;
   SupervisorValidations: { absenceId?: string } | undefined;
-  SupervisorTeam: undefined;
+  SupervisorTeam: { agentId?: string; siteId?: string } | undefined;
   SupervisorMessages: { threadUserId?: string } | undefined;
 };
 
