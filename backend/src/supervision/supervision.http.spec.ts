@@ -48,7 +48,10 @@ describe('Routes de la tablette superviseur (HTTP)', () => {
         Promise.resolve(where?.intervention?.siteId?.in?.includes('site-a') && !where.userId ? [{ userId: 'agent-1' }] : []),
       ),
     },
-    intervention: { findMany: jest.fn(() => Promise.resolve([])), findUnique: jest.fn(() => Promise.resolve(null)) },
+    intervention: {
+      findMany: jest.fn((_args: any) => Promise.resolve([])),
+      findUnique: jest.fn(() => Promise.resolve(null)),
+    },
     user: {
       findMany: jest.fn(({ where }: any) =>
         Promise.resolve(['agent-1', 'agent-9'].filter((id) => !where.id || where.id.in.includes(id)).map(agentRecord)),
