@@ -51,8 +51,12 @@ export function onServerReachabilityChange(listener: (reachable: boolean) => voi
   };
 }
 
+// L'appareil se sait sans réseau (vérifié avant l'envoi).
 const OFFLINE_ACTION_MESSAGE = "Pas de connexion : rien n'a été envoyé. Réessayez quand le réseau sera revenu.";
-const OFFLINE_READ_MESSAGE = 'Pas de connexion au serveur. Vérifiez le réseau et réessayez.';
+// La requête est partie mais le serveur n'a pas répondu (réseau coupé, serveur arrêté ou injoignable).
+const UNREACHABLE_ACTION_MESSAGE =
+  "Impossible de joindre le serveur : rien n'a été envoyé. Vérifiez le réseau, puis réessayez.";
+const UNREACHABLE_READ_MESSAGE = 'Impossible de joindre le serveur. Vérifiez le réseau, puis réessayez.';
 
 let unauthorizedHandler: (() => void) | null = null;
 
@@ -108,7 +112,7 @@ export async function apiFetch<T>({ path, token, options = {} }: FetchArgs): Pro
       );
     }
     // fetch échoue sans réponse (« Failed to fetch », « Network request failed ») : rien n'est parti.
-    throw new NetworkError(isAction ? OFFLINE_ACTION_MESSAGE : OFFLINE_READ_MESSAGE);
+    throw new NetworkError(isAction ? UNREACHABLE_ACTION_MESSAGE : UNREACHABLE_READ_MESSAGE);
   } finally {
     clearTimeout(timeout);
   }
