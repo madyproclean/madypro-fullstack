@@ -77,6 +77,7 @@ describe('Périmètre superviseur (HTTP)', () => {
     list: jest.fn(() => ({ items: [], total: 0 })),
     findOne: jest.fn((id: string) => ({ id, siteId: INTERVENTION_SITES[id] })),
     getPlanning: jest.fn(() => []),
+    update: jest.fn((id: string) => ({ id })),
   };
   const approvals = { createRequest: jest.fn(() => ({ id: 'req-1' })) };
   const attendanceService = { getLiveMap: jest.fn(() => []), list: jest.fn(() => ({ items: [] })) };
@@ -217,12 +218,23 @@ describe('Périmètre superviseur (HTTP)', () => {
       await as('admin-1').get('/interventions/int-z').expect(200);
     });
 
-    it('demande une création sur son site, jamais sur un site hors périmètre', async () => {
-      const body = { type: 'REGULAR', date: '2026-10-01', startTime: '08:00', endTime: '10:00', agentIds: [] };
-      await sup.post('/interventions').send({ ...body, siteId: 'site-z' }).expect(403);
+    it('ne crée ni ne duplique de mission : le gabarit est la seule source du planning', async () => {
+      const body = { type: 'REGULAR', siteId: 'site-a', date: '2026-10-01', startTime: '08:00', endTime: '10:00', agentIds: [] };
+      await sup.post('/interventions').send(body).expect(404);
+      await as('admin-1').post('/interventions').send(body).expect(404);
+      await as('admin-1').post('/interventions/batch').send({ occurrences: [body] }).expect(404);
+      await as('admin-1').post('/interventions/int-a/duplicate').send({ date: '2026-10-02' }).expect(404);
       expect(approvals.createRequest).not.toHaveBeenCalled();
-      await sup.post('/interventions').send({ ...body, siteId: 'site-a' }).expect(201);
-      expect(approvals.createRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuse de déplacer ou réaffecter une mission, même à l'admin, mais laisse noter une observation", async () => {
+      for (const change of [{ startTime: '09:00' }, { date: '2026-10-02' }, { agentIds: ['agent-1'] }, { siteId: 'site-a' }]) {
+        const res = await as('admin-1').patch('/interventions/int-a').send(change).expect(400);
+        expect(res.body.message).toMatch(/gabarit/);
+      }
+      await sup.patch('/interventions/int-a').send({ startTime: '09:00' }).expect(400);
+      expect(approvals.createRequest).not.toHaveBeenCalled();
+      await as('admin-1').patch('/interventions/int-a').send({ observation: 'Accès par la cour' }).expect(200);
     });
 
     it("n'annule pas une intervention d'un autre site", async () => {

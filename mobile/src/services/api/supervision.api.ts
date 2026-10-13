@@ -74,24 +74,12 @@ export function getReplacementSuggestions(token: string, absenceId: string) {
   return apiFetch<ReplacementSuggestions>({ path: `/absences/${absenceId}/replacement-suggestions`, token });
 }
 
-// ---------------------------------------------------------------- demandes de planification
+// ---------------------------------------------------------------- annulation ponctuelle
 
 /**
- * Pour un superviseur, ces appels ne modifient pas le planning : ils créent une demande de
- * validation que l'administrateur approuve ou refuse (réponse = la demande créée).
+ * Demande d'annulation d'une mission (validée par l'administrateur). C'est la seule demande possible
+ * sur une mission : créer, déplacer ou réaffecter passe par le gabarit du site.
  */
-export function requestMissionChange(
-  token: string,
-  interventionId: string,
-  change: { date?: string; startTime?: string; endTime?: string; agentIds?: string[] },
-) {
-  return apiFetch<ApprovalRequest>({
-    path: `/interventions/${interventionId}`,
-    token,
-    options: { method: 'PATCH', body: JSON.stringify(change) },
-  });
-}
-
 export function requestMissionCancel(token: string, interventionId: string, observation: string) {
   return apiFetch<ApprovalRequest>({
     path: `/interventions/${interventionId}/cancel`,

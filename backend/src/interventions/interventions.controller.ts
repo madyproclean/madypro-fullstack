@@ -1,16 +1,14 @@
 import { BadRequestException, Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, UseGuards, forwardRef } from '@nestjs/common';
 import { Request } from 'express';
-import { InterventionsService, InterventionFilters } from './interventions.service';
-import { CreateInterventionDto } from './dto/create-intervention.dto';
+import { assertNoPlanningChange, InterventionsService, InterventionFilters } from './interventions.service';
 import { UpdateInterventionDto } from './dto/update-intervention.dto';
-import { DuplicateInterventionDto } from './dto/duplicate-intervention.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SetSignatureDto } from './dto/set-signature.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ApprovalsService, ApprovalActionType } from '../approvals/approvals.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { SupervisorScopeGuard } from '../common/supervisor-scope/supervisor-scope.guard';
 import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 
@@ -120,90 +118,13 @@ export class InterventionsController {
     return this.service.findOne(id, { id: user.sub, role: user.role });
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'SUPERVISOR')
-  @Post()
-  async create(@Body() dto: CreateInterventionDto, @Req() req: Request) {
-    const user = req.user as any;
-    if (user.role === 'SUPERVISOR') {
-      await this.scope.assertSite(user, dto.siteId);
-      return this.approvals.createRequest({
-        actionType: 'CREATE_INTERVENTION',
-        entityType: 'Intervention',
-        entityId: null,
-        payload: dto as unknown as Record<string, unknown>,
-        requestedById: user.sub,
-        summary: `${dto.date} ${dto.startTime}–${dto.endTime}`,
-      });
-    }
-    return this.service.create(dto, user.sub);
-  }
-
-  /**
-   * Création ponctuelle multi-arrêts (un ou plusieurs sites, une seule fois) — utilisée par le
-   * formulaire unique de création quand plusieurs arrêts sont ajoutés en une soumission.
-   */
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'SUPERVISOR')
-  @Post('batch')
-  async createOneshotBatch(@Body('occurrences') occurrences: any[], @Req() req: Request) {
-    if (!Array.isArray(occurrences) || !occurrences.length) {
-      throw new BadRequestException('Au moins un arrêt est requis.');
-    }
-    const user = req.user as any;
-    if (user.role === 'SUPERVISOR') {
-      await this.scope.assertSites(user, occurrences.map((occ) => occ?.siteId));
-      return this.approvals.createRequest({
-        actionType: 'CREATE_INTERVENTION',
-        entityType: 'Intervention',
-        entityId: null,
-        payload: { occurrences },
-        requestedById: user.sub,
-        summary: `${occurrences.length} intervention(s)`,
-      });
-    }
-    return this.service.createOneshotBatch(occurrences, user.sub);
-  }
-
   @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id')
+  /** Statut, observation, photos, camions, facturation ; le planning se modifie par le gabarit. */
   async update(@Param('id') id: string, @Body() dto: UpdateInterventionDto, @Req() req: Request) {
+    assertNoPlanningChange(dto);
     const user = req.user as any;
-    const touchesSchedule = dto.date !== undefined || dto.startTime !== undefined || dto.endTime !== undefined;
-    const touchesAgents = dto.agentIds !== undefined;
-    // Déplacer une intervention vers un site hors périmètre est refusé (le site actuel est vérifié par la garde).
-    if (dto.siteId !== undefined) await this.scope.assertSite(user, dto.siteId);
-
-    if (user.role === 'SUPERVISOR' && !dto.status && (touchesSchedule || touchesAgents)) {
-      const original = await this.service.findOne(id, { id: user.sub, role: user.role });
-      let actionType: ApprovalActionType = 'UPDATE_INTERVENTION_SCHEDULE';
-      if (touchesAgents && !touchesSchedule) {
-        const before = new Set(original.agentIds);
-        const after = new Set(dto.agentIds ?? []);
-        const added = [...after].filter((x) => !before.has(x)).length;
-        const removed = [...before].filter((x) => !after.has(x)).length;
-        actionType = added >= removed ? 'ASSIGN_AGENT' : 'UNASSIGN_AGENT';
-      }
-      const summary = touchesSchedule
-        ? `${dto.date ?? original.date} ${dto.startTime ?? original.startTime}–${dto.endTime ?? original.endTime}`
-        : `${(dto.agentIds ?? []).length} agent(s) assigné(s)`;
-      return this.approvals.createRequest({
-        actionType,
-        entityType: 'Intervention',
-        entityId: id,
-        payload: dto as unknown as Record<string, unknown>,
-        previousState: {
-          date: original.date,
-          startTime: original.startTime,
-          endTime: original.endTime,
-          agentIds: original.agentIds,
-        },
-        requestedById: user.sub,
-        summary,
-      });
-    }
-
     return this.service.update(id, dto, user?.sub, user?.role);
   }
 
@@ -213,13 +134,6 @@ export class InterventionsController {
   updateStatus(@Param('id') id: string, @Body('status') status: string, @Req() req: Request) {
     const user = req.user as any;
     return this.service.updateStatus(id, status as any, { id: user.sub, role: user.role });
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
-  @Roles('ADMIN', 'SUPERVISOR')
-  @Post(':id/duplicate')
-  duplicate(@Param('id') id: string, @Body() dto: DuplicateInterventionDto, @Req() req: Request) {
-    return this.service.duplicate(id, dto, (req.user as any)?.sub);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))

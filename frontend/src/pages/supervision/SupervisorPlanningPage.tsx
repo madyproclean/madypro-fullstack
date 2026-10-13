@@ -3,17 +3,15 @@ import { Link } from 'react-router-dom';
 import { useAuthContext } from '../../context/AuthContext';
 import {
   listInterventions,
-  updateIntervention,
   getPlanning,
 } from '../../services/api/interventions.api';
 import { listSites } from '../../services/api/sites.api';
 import { listUsers } from '../../services/api/users.api';
 import { Intervention, PlanningEntry } from '../../types/intervention';
-import { isApprovalRequest } from '../../types/approval';
 import { Site } from '../../types/site';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-import { ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ChipGroup } from '../../components/ui/ChipGroup';
 import { StatusChip } from '../../components/ui/StatusChip';
 import { Badge } from '../../components/ui/Badge';
@@ -34,18 +32,6 @@ const startOfWeek = (date: Date) => {
 
 const toISODate = (date: Date) => date.toISOString().slice(0, 10);
 
-const shiftTime = (time: string, deltaMinutes: number) => {
-  const [h, m] = time.split(':').map((v) => parseInt(v, 10) || 0);
-  let total = h * 60 + m + deltaMinutes;
-  if (total < 0) total = 0;
-  const nh = Math.floor(total / 60)
-    .toString()
-    .padStart(2, '0');
-  const nm = Math.floor(total % 60)
-    .toString()
-    .padStart(2, '0');
-  return `${nh}:${nm}`;
-};
 
 export const SupervisorPlanningPage: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const { token, user, notify } = useAuthContext();
@@ -171,33 +157,12 @@ export const SupervisorPlanningPage: React.FC<{ embedded?: boolean }> = ({ embed
       .sort((a, b) => (userNames[a.agentId] ?? a.agentId).localeCompare(userNames[b.agentId] ?? b.agentId));
   }, [planning, supervisedSiteIds, filters.siteId, filters.agentId, userNames]);
 
-  const shiftIntervention = async (intervention: Intervention, deltaStart: number, deltaEnd?: number) => {
-    if (!token) return;
-    const nextStart = shiftTime(intervention.startTime, deltaStart);
-    const nextEnd = shiftTime(intervention.endTime, deltaEnd ?? 0);
-    try {
-      const updated = await updateIntervention(token, intervention.id, {
-        startTime: nextStart,
-        endTime: nextEnd,
-      });
-      if (isApprovalRequest(updated)) {
-        notify('Demande de changement d’horaire envoyée pour validation admin');
-        return;
-      }
-      setInterventions((prev) => prev.map((i) => (i.id === intervention.id ? { ...i, ...updated } : i)));
-      notify('Horaires ajustés');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ajustement impossible';
-      notify(message, 'error');
-    }
-  };
-
   return (
     <div className={embedded ? undefined : 'page'}>
       {!embedded && (
         <PageHeader
           title="Planning des équipes"
-          subtitle="Vue hebdomadaire des équipes par site, avec ajustement horaires et remplacements."
+          subtitle="Vue hebdomadaire des équipes par site. Horaires et agents se modifient dans le gabarit du site."
         />
       )}
 
@@ -293,7 +258,6 @@ export const SupervisorPlanningPage: React.FC<{ embedded?: boolean }> = ({ embed
                     <th>Heures</th>
                     <th>Agents</th>
                     <th>Statut</th>
-                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -328,51 +292,11 @@ export const SupervisorPlanningPage: React.FC<{ embedded?: boolean }> = ({ embed
                       <td>
                         <StatusChip status={intervention.status} />
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="btn--compact"
-                            icon={Clock}
-                            onClick={() => shiftIntervention(intervention, -15, -15)}
-                          >
-                            -15 min
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="btn--compact"
-                            icon={Clock}
-                            onClick={() => shiftIntervention(intervention, 15, 15)}
-                          >
-                            +15 min
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="btn--compact"
-                            icon={Clock}
-                            onClick={() => shiftIntervention(intervention, -15, 0)}
-                          >
-                            Avancer début
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="btn--compact"
-                            icon={Clock}
-                            onClick={() => shiftIntervention(intervention, 0, 15)}
-                          >
-                            Prolonger fin
-                          </Button>
-                        </div>
-                      </td>
                     </tr>
                   ))}
                   {items.length === 0 && (
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
+                      <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
                         Aucune intervention sur cette semaine.
                       </td>
                     </tr>

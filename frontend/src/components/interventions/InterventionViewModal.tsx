@@ -12,7 +12,6 @@ import { compressImageFile } from '../../utils/image';
 import { formatHour, timeValue } from '../../utils/datetime';
 import { Button } from '../ui/Button';
 import { Checkbox } from '../ui/Checkbox';
-import { ChipGroup } from '../ui/ChipGroup';
 import { Modal, ModalHeader, ModalBody } from '../ui/Modal';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import { PhotoGrid } from '../ui/PhotoGrid';
@@ -23,7 +22,6 @@ const TERMINAL_STATUSES = ['COMPLETED', 'NO_SHOW', 'CANCELLED'];
 export type InterventionViewModalProps = {
   viewing: Intervention | null;
   onClose: () => void;
-  agentOptions: { id: string; name: string }[];
   /** Appelé après chaque sauvegarde réussie (facturable, agents, pointages, observation/photos, signature). */
   onUpdated: (updated: Intervention) => void;
 };
@@ -31,16 +29,13 @@ export type InterventionViewModalProps = {
 export const InterventionViewModal: React.FC<InterventionViewModalProps> = ({
   viewing,
   onClose,
-  agentOptions,
   onUpdated,
 }) => {
   const { token, notify } = useAuthContext();
   const [attendances, setAttendances] = useState<Attendance[]>([]);
   const [attendanceEdits, setAttendanceEdits] = useState<Record<string, { checkInTime?: string; checkOutTime?: string }>>({});
-  const [agentSelection, setAgentSelection] = useState<string[]>([]);
   const [observationDraft, setObservationDraft] = useState('');
   const [photoDraft, setPhotoDraft] = useState<string[]>([]);
-  const [savingAgents, setSavingAgents] = useState(false);
   const [savingObservation, setSavingObservation] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -62,7 +57,6 @@ export const InterventionViewModal: React.FC<InterventionViewModalProps> = ({
     if (!viewing) return;
     setObservationDraft(viewing.observation ?? '');
     setPhotoDraft(viewing.photos ?? []);
-    setAgentSelection(viewing.agentIds ?? []);
     setAttendanceEdits({});
     fetchAttendance(viewing);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,19 +96,6 @@ export const InterventionViewModal: React.FC<InterventionViewModalProps> = ({
       applyResult(result, 'Facturation mise à jour');
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Mise à jour impossible', 'error');
-    }
-  };
-
-  const handleSaveAgents = async () => {
-    if (!token) return;
-    setSavingAgents(true);
-    try {
-      const result = await updateIntervention(token, viewing.id, { agentIds: agentSelection });
-      applyResult(result, 'Agents mis à jour');
-    } catch (err) {
-      notify(err instanceof Error ? err.message : 'Mise à jour impossible', 'error');
-    } finally {
-      setSavingAgents(false);
     }
   };
 
@@ -226,23 +207,6 @@ export const InterventionViewModal: React.FC<InterventionViewModalProps> = ({
             <p>{viewing.observation || '—'}</p>
           </div>
         </div>
-
-        {!['COMPLETED', 'CANCELLED'].includes(viewing.status) && (
-          <div style={{ marginTop: '1.5rem' }}>
-            <h4>Agents assignés</h4>
-            <ChipGroup
-              multiple
-              options={agentOptions.map((agent) => ({ value: agent.id, label: agent.name }))}
-              value={agentSelection}
-              onChange={setAgentSelection}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-              <Button type="button" variant="ghost" className="btn--compact" disabled={savingAgents} onClick={handleSaveAgents}>
-                {savingAgents ? 'Enregistrement...' : 'Mettre à jour les agents'}
-              </Button>
-            </div>
-          </div>
-        )}
 
         <div style={{ marginTop: '1.5rem' }}>
           <h4>Agents & pointages</h4>

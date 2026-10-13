@@ -13,7 +13,7 @@ import { Intervention } from '@/types/intervention';
 import { Anomaly } from '@/types/anomaly';
 import { ApprovalRequest, MissionAttendance } from '@/types/supervision';
 import { ANOMALY_LABELS, APPROVAL_ACTION_LABELS, formatClock, formatDayLong, missionStatus } from './format';
-import { MissionRequestKind, MissionRequestSheet } from './MissionRequestSheet';
+import { CancelMissionSheet } from './CancelMissionSheet';
 import { TemplateEditorSheet } from './TemplateEditorSheet';
 
 type Props = {
@@ -41,7 +41,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [requestKind, setRequestKind] = useState<MissionRequestKind | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
 
   const load = useCallback(async () => {
@@ -280,7 +280,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
           {/* Une mission se modifie par son gabarit ; seule l'annulation ponctuelle reste possible ici. */}
           <ActionButton label="Modifier le gabarit" icon="git-branch-outline" onPress={() => setEditingTemplate(true)} />
           {mission.status === 'PLANNED' ? (
-            <ActionButton label="Annuler la mission" icon="close-circle-outline" onPress={() => setRequestKind('cancel')} />
+            <ActionButton label="Annuler la mission" icon="close-circle-outline" onPress={() => setCancelling(true)} />
           ) : null}
         </View>
       ) : null}
@@ -293,10 +293,9 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
         onSaved={() => onChanged?.()}
       />
 
-      <MissionRequestSheet
-        kind={requestKind}
-        mission={mission}
-        onClose={() => setRequestKind(null)}
+      <CancelMissionSheet
+        mission={cancelling ? mission : null}
+        onClose={() => setCancelling(false)}
         onSent={() => {
           load();
           onChanged?.();

@@ -18,7 +18,6 @@ import {
 } from './entities/intervention.entity';
 import { CreateInterventionDto } from './dto/create-intervention.dto';
 import { UpdateInterventionDto } from './dto/update-intervention.dto';
-import { DuplicateInterventionDto } from './dto/duplicate-intervention.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SitesService } from '../sites/sites.service';
@@ -73,6 +72,36 @@ type InterventionRecord = Prisma.InterventionGetPayload<{
 }>;
 
 type PersistedInterventionType = 'REGULAR' | 'PUNCTUAL';
+
+/**
+ * Le gabarit d'un site est la seule source du planning : une mission n'est créée que par la
+ * génération depuis un gabarit, et ses éléments de planning (site, date, horaires, prestation,
+ * agents) ne se modifient qu'en modifiant ce gabarit.
+ */
+export const TEMPLATE_ONLY_MESSAGE =
+  "Les missions découlent uniquement du gabarit de leur site : pour créer, déplacer ou réaffecter une mission, modifiez le gabarit.";
+
+/** Champs de planning d'une mission, jamais modifiables hors gabarit. */
+const PLANNING_FIELDS = [
+  'siteId',
+  'date',
+  'startTime',
+  'endTime',
+  'type',
+  'subType',
+  'categoryId',
+  'label',
+  'agentIds',
+  'generatedFromTemplateId',
+  'generatedFromStopId',
+  'batchId',
+] as const;
+
+/** Lève une erreur si la modification touche au planning (seuls statut, notes, photos, camions, facturation passent). */
+export function assertNoPlanningChange(dto: object) {
+  const touched = PLANNING_FIELDS.filter((field) => (dto as Record<string, unknown>)[field] !== undefined);
+  if (touched.length) throw new BadRequestException(TEMPLATE_ONLY_MESSAGE);
+}
 
 @Injectable()
 export class InterventionsService implements OnModuleInit {
@@ -723,7 +752,11 @@ export class InterventionsService implements OnModuleInit {
     return this.present(this.toEntity(record), (record as any).attendances);
   }
 
+  /** Réservé à la génération depuis un gabarit (créneau d'origine obligatoire). */
   async create(dto: CreateInterventionDto, actorId = 'system', options?: { silent?: boolean }) {
+    if (!dto.generatedFromTemplateId || !dto.generatedFromStopId) {
+      throw new BadRequestException(TEMPLATE_ONLY_MESSAGE);
+    }
     const normalizedType = this.normalizeTypeInput(dto.type);
     if (!normalizedType) {
       throw new BadRequestException("Type d'intervention invalide");
@@ -845,6 +878,7 @@ export class InterventionsService implements OnModuleInit {
   }
 
   async update(id: string, dto: UpdateInterventionDto, actorId = 'system', viewerRole?: string) {
+    assertNoPlanningChange(dto);
     await this.findRecord(id);
     const data: Prisma.InterventionUpdateInput = {};
     // Pré-calcul pour synchroniser attendances après mise à jour
@@ -1048,48 +1082,6 @@ export class InterventionsService implements OnModuleInit {
     return view;
   }
 
-  async duplicate(id: string, dto: DuplicateInterventionDto, actorId = 'system') {
-    const record = await this.findRecord(id);
-    const agentIds = record.assignments.map((a) => a.userId);
-    if (agentIds.length) {
-      await this.checkAssignmentConflicts(agentIds, dto.date, record.startTime, record.endTime);
-    }
-    const copy = await this.prisma.intervention.create({
-      data: {
-        siteId: record.siteId,
-        date: this.toDateOnly(dto.date),
-        startTime: record.startTime,
-        endTime: record.endTime,
-        type: record.type,
-        subType: record.subType,
-        label: record.label,
-        observation: record.observation,
-        assignments: record.assignments.length
-          ? {
-              create: record.assignments.map((assignment) => ({ userId: assignment.userId })),
-            }
-          : undefined,
-        trucks: record.trucks.length
-          ? {
-              create: record.trucks.map((truck) => ({ label: truck.label })),
-            }
-          : undefined,
-      },
-      include: { assignments: true, trucks: true, attendances: true },
-    });
-    const view = this.present(this.toEntity(copy), (copy as any).attendances);
-    this.auditService.record({
-      actorId,
-      action: 'DUPLICATE_INTERVENTION',
-      entityType: 'intervention',
-      entityId: view.id,
-      details: `Depuis ${id}, vers le ${dto.date}`,
-    });
-    this.notifyAssignedAgents(view, 'created').catch((err) =>
-      this.logger.warn(`Notification agents échouée: ${err.message}`),
-    );
-    return view;
-  }
 
   async cancel(id: string, observation: string, actorId = 'system') {
     if (!observation) {
@@ -1789,72 +1781,6 @@ export class InterventionsService implements OnModuleInit {
     );
   }
 
-  /**
-   * Création ponctuelle (un ou plusieurs arrêts, une seule fois, sans gabarit persisté). Un seul
-   * arrêt se comporte exactement comme `create()` (notification individuelle normale) ; plusieurs
-   * arrêts déclenchent la même sémantique de lot que `createTemplateBatch` (batchId partagé,
-   * notification consolidée par agent).
-   */
-  async createOneshotBatch(
-    occurrences: {
-      siteId: string;
-      date: string;
-      startTime: string;
-      endTime: string;
-      agentIds: string[];
-      label?: string;
-      categoryId?: string;
-    }[],
-    actorId: string,
-  ) {
-    for (const occurrence of occurrences) {
-      if (occurrence.agentIds?.length) {
-        await this.checkAssignmentConflicts(occurrence.agentIds, occurrence.date, occurrence.startTime, occurrence.endTime);
-      }
-    }
-    if (occurrences.length === 1) {
-      const [occurrence] = occurrences;
-      return this.create(
-        {
-          type: 'REGULAR',
-          siteId: occurrence.siteId,
-          date: occurrence.date,
-          startTime: occurrence.startTime,
-          endTime: occurrence.endTime,
-          label: occurrence.label,
-          agentIds: occurrence.agentIds,
-          categoryId: occurrence.categoryId,
-        } as CreateInterventionDto,
-        actorId,
-      );
-    }
-    const batchId = randomUUID();
-    const created: InterventionView[] = [];
-    for (const occurrence of occurrences) {
-      const view = await this.create(
-        {
-          type: 'REGULAR',
-          siteId: occurrence.siteId,
-          date: occurrence.date,
-          startTime: occurrence.startTime,
-          endTime: occurrence.endTime,
-          label: occurrence.label,
-          agentIds: occurrence.agentIds,
-          categoryId: occurrence.categoryId,
-          batchId,
-        } as CreateInterventionDto,
-        actorId,
-        { silent: true },
-      );
-      created.push(view);
-    }
-    try {
-      await this.sendConsolidatedNotification(created);
-    } catch (err) {
-      this.logger.warn(`Notification de lot échouée: ${(err as Error).message}`);
-    }
-    return created;
-  }
 
   async listChecklist(interventionId: string) {
     await this.findRecord(interventionId);

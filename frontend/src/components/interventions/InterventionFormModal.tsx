@@ -67,7 +67,7 @@ export const InterventionFormModal: React.FC<InterventionFormModalProps> = ({
     <Modal open={open} onClose={onClose} maxWidth={960} labelledBy="intervention-form-title">
       <ModalHeader
         eyebrow="Intervention"
-        title={editingId ? 'Modifier une intervention' : 'Nouvelle intervention'}
+        title={observationOnly ? 'Observation de la mission' : editingId ? 'Modifier une intervention' : 'Nouvelle intervention'}
         titleId="intervention-form-title"
         onClose={onClose}
         actions={
@@ -84,6 +84,11 @@ export const InterventionFormModal: React.FC<InterventionFormModalProps> = ({
           onSubmit={onSubmit}
           style={{ boxShadow: 'none', padding: 0, display: 'grid', gap: '1rem' }}
         >
+          {observationOnly && (
+            <p style={{ margin: 0, color: 'var(--color-muted)' }}>
+              Le site, la date, les horaires et les agents découlent du gabarit du site : modifiez le gabarit pour les changer.
+            </p>
+          )}
           <Select
             label="Type"
             options={[

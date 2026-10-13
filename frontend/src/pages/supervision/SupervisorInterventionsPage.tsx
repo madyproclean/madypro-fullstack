@@ -2,11 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { listInterventions, updateIntervention, cancelIntervention } from '../../services/api/interventions.api';
 import { listSites } from '../../services/api/sites.api';
-import { listUsers } from '../../services/api/users.api';
 import { Intervention } from '../../types/intervention';
 import { isApprovalRequest } from '../../types/approval';
 import { Site } from '../../types/site';
-import { User } from '../../types/user';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Plus, Eye, Play, CheckCheck, X } from 'lucide-react';
@@ -33,7 +31,6 @@ export const SupervisorInterventionsPage: React.FC = () => {
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewing, setViewing] = useState<Intervention | null>(null);
-  const [agents, setAgents] = useState<User[]>([]);
   const [gabaritCreateSignal, setGabaritCreateSignal] = useState(0);
   const [cancelPromptFor, setCancelPromptFor] = useState<Intervention | null>(null);
   const [filters, setFilters] = useState<{ siteId: string; date: string; status: string }>({
@@ -89,13 +86,6 @@ export const SupervisorInterventionsPage: React.FC = () => {
       return true;
     });
   }, [filters.siteId, filters.status, interventions, supervisedSiteIds]);
-
-  useEffect(() => {
-    if (!token) return;
-    listUsers(token, { role: 'AGENT', status: 'active', pageSize: 500 })
-      .then((res) => setAgents(res.items))
-      .catch(() => setAgents([]));
-  }, [token]);
 
   const confirmCancel = async (observation: string) => {
     if (!token || !cancelPromptFor) return;
@@ -324,7 +314,6 @@ export const SupervisorInterventionsPage: React.FC = () => {
       <InterventionViewModal
         viewing={viewing}
         onClose={() => setViewing(null)}
-        agentOptions={agents.map((agent) => ({ id: agent.id, name: agent.name }))}
         onUpdated={(updated) => {
           setViewing(updated);
           setInterventions((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));

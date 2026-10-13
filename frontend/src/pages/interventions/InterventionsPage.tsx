@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Filter, Download, Eye, Pencil, Copy, X, AlertTriangle } from 'lucide-react';
+import { Plus, Filter, Download, Eye, Pencil, X, AlertTriangle } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { AssignmentSuggestion, DurationEstimate, Intervention, InterventionStatus, InterventionType } from '../../types/intervention';
 import { isApprovalRequest } from '../../types/approval';
 import {
   listInterventions,
   updateIntervention,
-  duplicateIntervention,
   cancelIntervention,
   getAssignmentSuggestions,
   estimateDuration,
@@ -91,7 +90,6 @@ export const InterventionsPage: React.FC = () => {
   const [suggestions, setSuggestions] = useState<AssignmentSuggestion | null>(null);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [durationEstimate, setDurationEstimate] = useState<DurationEstimate | null>(null);
-  const [duplicatePromptFor, setDuplicatePromptFor] = useState<Intervention | null>(null);
   const [cancelPromptFor, setCancelPromptFor] = useState<Intervention | null>(null);
   const [needsReviewTotal, setNeedsReviewTotal] = useState(0);
   const [total, setTotal] = useState(0);
@@ -298,11 +296,9 @@ export const InterventionsPage: React.FC = () => {
       notify("Impossible de modifier une intervention annulée", 'error');
       return;
     }
-    const obsOnly = intervention.status === 'COMPLETED' || intervention.status === 'NO_SHOW';
-    if (obsOnly) {
-      notify('Seule l’observation peut être modifiée sur une intervention terminée ou non effectuée.');
-    }
-    setObservationOnly(obsOnly);
+    // Le planning (site, date, horaires, agents) se modifie dans le gabarit du site : ici,
+    // seule l'observation de la mission est modifiable.
+    setObservationOnly(true);
     setEditingId(intervention.id);
     setSuggestions(null);
     setForm({
@@ -324,21 +320,6 @@ export const InterventionsPage: React.FC = () => {
     setEditingId(null);
     setObservationOnly(false);
     setForm((prev) => ({ ...createFormDefaults, siteId: prev.siteId, agentIds: prev.agentIds }));
-  };
-
-  const duplicate = (intervention: Intervention) => setDuplicatePromptFor(intervention);
-
-  const confirmDuplicate = async (date: string) => {
-    if (!token || !duplicatePromptFor) return;
-    const intervention = duplicatePromptFor;
-    setDuplicatePromptFor(null);
-    try {
-      await duplicateIntervention(token, intervention.id, date);
-      notify('Intervention dupliquée');
-      fetchInterventions();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : 'Duplication impossible', 'error');
-    }
   };
 
   const cancel = (intervention: Intervention) => setCancelPromptFor(intervention);
@@ -551,27 +532,9 @@ export const InterventionsPage: React.FC = () => {
                           className="btn--compact"
                           icon={Pencil}
                           onClick={() => startEditing(intervention)}
-                          disabled={
-                            intervention.status === 'COMPLETED' ||
-                            intervention.status === 'CANCELLED' ||
-                            intervention.status === 'NO_SHOW'
-                          }
+                          disabled={intervention.status === 'CANCELLED'}
                         >
-                          Éditer
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="btn--compact"
-                          icon={Copy}
-                          onClick={() => duplicate(intervention)}
-                          disabled={
-                            intervention.status === 'COMPLETED' ||
-                            intervention.status === 'CANCELLED' ||
-                            intervention.status === 'NO_SHOW'
-                          }
-                        >
-                          Dupliquer
+                          Observation
                         </Button>
                         <Button type="button" variant="ghost" className="btn--compact" icon={X} onClick={() => cancel(intervention)}>
                           Annuler
@@ -593,7 +556,6 @@ export const InterventionsPage: React.FC = () => {
       <InterventionViewModal
         viewing={viewing}
         onClose={() => setViewing(null)}
-        agentOptions={users.map((user) => ({ id: user.id, name: user.name }))}
         onUpdated={(updated) => {
           setViewing(updated);
           setInterventions((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
@@ -601,17 +563,6 @@ export const InterventionsPage: React.FC = () => {
       />
       </>
       )}
-      <PromptModal
-        open={duplicatePromptFor !== null}
-        title="Dupliquer l'intervention"
-        label="Nouvelle date"
-        type="date"
-        required
-        defaultValue={duplicatePromptFor?.date}
-        confirmLabel="Dupliquer"
-        onConfirm={confirmDuplicate}
-        onCancel={() => setDuplicatePromptFor(null)}
-      />
       <PromptModal
         open={cancelPromptFor !== null}
         title="Motif d'annulation"

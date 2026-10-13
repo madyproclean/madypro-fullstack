@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards, forwardRef } from '@nestjs/common';
 import { Request } from 'express';
 import { ApprovalsService } from './approvals.service';
-import { InterventionsService } from '../interventions/interventions.service';
+import { InterventionsService, TEMPLATE_ONLY_MESSAGE } from '../interventions/interventions.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -75,15 +75,12 @@ export class ApprovalsController {
   ) {
     const payload = request.payload as any;
     switch (request.actionType) {
+      // Demandes antérieures à la règle « gabarit seul » : ne peuvent plus être appliquées.
       case 'CREATE_INTERVENTION':
-        return Array.isArray(payload?.occurrences)
-          ? this.interventionsService.createOneshotBatch(payload.occurrences, reviewerId)
-          : this.interventionsService.create(payload, reviewerId);
       case 'UPDATE_INTERVENTION_SCHEDULE':
       case 'ASSIGN_AGENT':
       case 'UNASSIGN_AGENT':
-        if (!request.entityId) throw new Error('Intervention manquante');
-        return this.interventionsService.update(request.entityId, payload, reviewerId, 'SUPERVISOR');
+        throw new BadRequestException(`Demande obsolète, à refuser. ${TEMPLATE_ONLY_MESSAGE}`);
       case 'CANCEL_INTERVENTION':
         if (!request.entityId) throw new Error('Intervention manquante');
         return this.interventionsService.cancel(request.entityId, payload.observation, reviewerId);

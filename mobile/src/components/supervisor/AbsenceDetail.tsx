@@ -11,11 +11,9 @@ import {
   getReplacementSuggestions,
   getTeamAbsence,
 } from '@/services/api/supervision.api';
-import { getInterventionById } from '@/services/api/interventions.api';
-import { Intervention } from '@/types/intervention';
 import { ReplacementSuggestions, TeamAbsence } from '@/types/supervision';
 import { formatDayShort } from './format';
-import { MissionRequestSheet } from './MissionRequestSheet';
+import { TemplateEditorSheet } from './TemplateEditorSheet';
 
 export const ABSENCE_LABELS: Record<string, string> = {
   SICK: 'Arrêt maladie',
@@ -45,7 +43,8 @@ type Props = {
 /**
  * Détail d'une absence de l'équipe : approuver ou refuser (motif obligatoire) ; pour une absence
  * de plus de 5 jours, première validation seulement, l'administrateur donnant l'accord final.
- * Une fois approuvée, propose des remplaçants pour les missions touchées (demande à l'administrateur).
+ * Une fois approuvée, liste les missions touchées et les agents disponibles ; le remplacement se
+ * fait en modifiant le gabarit du site (seule source du planning).
  */
 export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }) => {
   const { token } = useAuthContext();
@@ -56,7 +55,7 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<ReplacementSuggestions | null>(null);
-  const [proposal, setProposal] = useState<{ mission: Intervention; agentIds: string[] } | null>(null);
+  const [templateSiteId, setTemplateSiteId] = useState<string | null>(null);
 
   useEffect(() => {
     setAbsence(initial ?? null);
@@ -95,18 +94,6 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
     } finally {
       setBusy(false);
     }
-  };
-
-  const propose = async (interventionId: string, candidateId: string) => {
-    if (!token || !absence) return;
-    const mission = await getInterventionById(token, interventionId);
-    if (!mission) {
-      setActionError('Mission introuvable.');
-      return;
-    }
-    // L'agent absent est remplacé par le candidat, les autres agents restent.
-    const agentIds = [...mission.agentIds.filter((id) => id !== absence.agent.id), candidateId];
-    setProposal({ mission, agentIds });
   };
 
   if (loadError) {
@@ -222,28 +209,24 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
                 <Text style={styles.bold}>
                   {item.siteName} · {formatDayShort(item.date)} · {item.startTime} – {item.endTime}
                 </Text>
-                {item.candidates.length === 0 ? (
-                  <Text style={styles.muted}>Aucun agent disponible sur ce créneau.</Text>
-                ) : (
-                  item.candidates.slice(0, 3).map((candidate) => (
-                    <View key={candidate.id} style={styles.candidate}>
-                      <Text style={styles.text}>{candidate.name} · disponible</Text>
-                      <Button label="Proposer" onPress={() => propose(item.interventionId, candidate.id)} />
-                    </View>
-                  ))
-                )}
+                <Text style={styles.muted}>
+                  {item.candidates.length
+                    ? `Disponibles : ${item.candidates
+                        .slice(0, 3)
+                        .map((c) => c.name)
+                        .join(', ')}`
+                    : 'Aucun agent disponible sur ce créneau.'}
+                </Text>
+                <View style={styles.candidate}>
+                  <Button label="Modifier le gabarit du site" onPress={() => setTemplateSiteId(item.siteId)} />
+                </View>
               </View>
             ))
           )}
         </View>
       ) : null}
 
-      <MissionRequestSheet
-        kind={proposal ? 'agents' : null}
-        mission={proposal?.mission}
-        initialAgentIds={proposal?.agentIds}
-        onClose={() => setProposal(null)}
-      />
+      <TemplateEditorSheet visible={templateSiteId !== null} siteId={templateSiteId} onClose={() => setTemplateSiteId(null)} />
     </ScrollView>
   );
 };

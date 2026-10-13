@@ -78,25 +78,6 @@ export async function listInterventions(token: string, filters: InterventionFilt
   return { ...data, items: mapped } as InterventionsPage;
 }
 
-/**
- * Un superviseur reçoit une ApprovalRequest (PENDING) au lieu de l'intervention : son action
- * n'est pas appliquée tant qu'un admin ne l'a pas validée. L'appelant doit vérifier
- * isApprovalRequest() sur le résultat avant de traiter la réponse comme une Intervention.
- */
-export async function createIntervention(
-  token: string,
-  payload: CreateInterventionPayload,
-): Promise<Intervention | ApprovalRequest> {
-  const item = await apiFetch<Intervention | ApprovalRequest>({
-    path: 'interventions',
-    token,
-    options: {
-      method: 'POST',
-      body: JSON.stringify({ ...payload, type: mapTypeToApi(payload.type) }),
-    },
-  });
-  return isApprovalRequest(item) ? item : { ...item, type: mapTypeFromApi(item.type) };
-}
 
 export async function updateIntervention(
   token: string,
@@ -114,16 +95,6 @@ export async function updateIntervention(
   return isApprovalRequest(item) ? item : { ...item, type: mapTypeFromApi(item.type) };
 }
 
-export async function duplicateIntervention(token: string, id: string, date: string) {
-  return apiFetch<Intervention>({
-    path: `interventions/${id}/duplicate`,
-    token,
-    options: {
-      method: 'POST',
-      body: JSON.stringify({ date }),
-    },
-  });
-}
 
 export async function cancelIntervention(
   token: string,
@@ -151,25 +122,6 @@ export type OneshotOccurrence = {
   categoryId?: string;
 };
 
-/**
- * Création ponctuelle (une seule fois) — un ou plusieurs arrêts en une soumission. Un seul arrêt
- * se comporte comme `createIntervention`, plusieurs déclenchent la sémantique de lot (batchId
- * partagé, notification consolidée par agent).
- */
-export async function createOneshotBatch(
-  token: string,
-  occurrences: OneshotOccurrence[],
-): Promise<Intervention[] | ApprovalRequest> {
-  const item = await apiFetch<Intervention[] | ApprovalRequest>({
-    path: 'interventions/batch',
-    token,
-    options: {
-      method: 'POST',
-      body: JSON.stringify({ occurrences }),
-    },
-  });
-  return isApprovalRequest(item) ? item : item.map((i) => ({ ...i, type: mapTypeFromApi(i.type) }));
-}
 
 export type TemplateStopPayload = {
   id?: string;
