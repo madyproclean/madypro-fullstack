@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   label: { fontFamily: theme.fonts.body, fontSize: 15, color: theme.colors.muted },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   choice: {
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: 16,
     borderRadius: 999,
     borderWidth: 1,

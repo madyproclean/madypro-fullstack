@@ -87,22 +87,27 @@ export async function listInterventionsByRange(
   return primary;
 }
 
+/** Mission avec son site (adresse, coordonnées) ; propage les erreurs (réseau, droits). */
+export async function fetchInterventionById(token: string, id: string): Promise<Intervention> {
+  const intervention = await apiFetch<ApiIntervention>({ path: `/interventions/${id}`, token });
+  const mapped = mapIntervention(intervention);
+  // Always hydrate with site to ensure coords/address are present & numeric
+  try {
+    const site = await getSite(token, mapped.siteId);
+    return {
+      ...mapped,
+      siteAddress: site.address ?? mapped.siteAddress,
+      siteLatitude: typeof site.latitude === 'number' ? site.latitude : mapped.siteLatitude,
+      siteLongitude: typeof site.longitude === 'number' ? site.longitude : mapped.siteLongitude,
+    };
+  } catch {
+    return mapped;
+  }
+}
+
 export async function getInterventionById(token: string, id: string): Promise<Intervention | null> {
   try {
-    const intervention = await apiFetch<ApiIntervention>({ path: `/interventions/${id}`, token });
-    const mapped = mapIntervention(intervention);
-    // Always hydrate with site to ensure coords/address are present & numeric
-    try {
-      const site = await getSite(token, mapped.siteId);
-      return {
-        ...mapped,
-        siteAddress: site.address ?? mapped.siteAddress,
-        siteLatitude: typeof site.latitude === 'number' ? site.latitude : mapped.siteLatitude,
-        siteLongitude: typeof site.longitude === 'number' ? site.longitude : mapped.siteLongitude,
-      };
-    } catch {
-      return mapped;
-    }
+    return await fetchInterventionById(token, id);
   } catch (error) {
     console.error('Failed to load intervention', error);
     return null;

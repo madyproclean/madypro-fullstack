@@ -5,6 +5,8 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { useFocusPolling } from '@/hooks/useFocusPolling';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { StatusPill, StatusTone } from '@/components/ui/StatusPill';
 import { ScreenHeader } from '@/components/supervisor/ScreenHeader';
 import { Initials, ListRow } from '@/components/supervisor/ListRow';
@@ -30,7 +32,7 @@ const REQUEST_STATUS: Record<ApprovalRequest['status'], { label: string; tone: S
 const formatDateTime = (iso: string) => `${formatDayShort(toISODate(new Date(iso)))} à ${formatClock(iso)}`;
 
 export default function SupervisorValidationsScreen({ route, navigation }: Props) {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const [tab, setTab] = useState<Tab>('absences');
   const [absences, setAbsences] = useState<TeamAbsence[]>([]);
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
@@ -53,19 +55,24 @@ export default function SupervisorValidationsScreen({ route, navigation }: Props
     if (!token || inFlight.current) return;
     inFlight.current = true;
     try {
-      const [nextAbsences, nextRequests] = await Promise.all([listTeamAbsences(token, 'PENDING'), listMyRequests(token)]);
-      setAbsences(nextAbsences);
-      setRequests(nextRequests);
-      setUpdatedAt(formatClock(new Date().toISOString()));
-      setError(null);
+      const fetchAll = () => Promise.all([listTeamAbsences(token, 'PENDING'), listMyRequests(token)]);
+      const apply = ([nextAbsences, nextRequests]: Awaited<ReturnType<typeof fetchAll>>) => {
+        setAbsences(nextAbsences);
+        setRequests(nextRequests);
+      };
+      const result = await loadWithCache(user?.id, 'validations', fetchAll, (cached) => apply(cached.value));
+      apply(result.value);
+      setUpdatedAt(formatSavedAt(result.savedAt));
+      setError(result.fromCache ? 'Hors ligne' : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger les validations.');
     } finally {
       inFlight.current = false;
     }
-  }, [token]);
+  }, [token, user?.id]);
 
   useFocusPolling(load);
+  const refreshControl = usePullToRefresh(load);
 
   // À traiter d'abord : celles qui attendent encore l'accord du superviseur.
   const toHandle = absences.filter((a) => !(a.requiresSecondApproval && a.level1ApprovedBy));
@@ -73,7 +80,7 @@ export default function SupervisorValidationsScreen({ route, navigation }: Props
   const selected = absences.find((a) => a.id === selectedId);
 
   const absencesList = (
-    <ScrollView contentContainerStyle={styles.list}>
+    <ScrollView contentContainerStyle={styles.list} refreshControl={refreshControl}>
       {absences.length === 0 ? <Text style={styles.empty}>Aucune absence en attente dans votre équipe.</Text> : null}
       {[...absences]
         .sort((a, b) => Number(toHandle.includes(b)) - Number(toHandle.includes(a)) || a.from.localeCompare(b.from))
@@ -89,7 +96,7 @@ export default function SupervisorValidationsScreen({ route, navigation }: Props
               selected={absence.id === selectedId}
               onPress={() => setSelectedId(absence.id)}
               leading={<Initials name={absence.agent.name} />}
-              below={<StatusPill label={status.label} tone={status.tone} />}
+              below={<StatusPill strong label={status.label} tone={status.tone} />}
             />
           );
         })}
@@ -97,7 +104,7 @@ export default function SupervisorValidationsScreen({ route, navigation }: Props
   );
 
   const requestsList = (
-    <ScrollView contentContainerStyle={styles.list}>
+    <ScrollView contentContainerStyle={styles.list} refreshControl={refreshControl}>
       {requests.length === 0 ? (
         <Text style={styles.empty}>
           Vous n'avez envoyé aucune demande. Déplacer, réaffecter ou annuler une mission se fait depuis Missions.
@@ -119,7 +126,7 @@ export default function SupervisorValidationsScreen({ route, navigation }: Props
                 <Text style={styles.rejection}>Motif : {request.reviewComment}</Text>
               ) : null}
             </View>
-            <StatusPill label={status.label} tone={status.tone} />
+            <StatusPill strong label={status.label} tone={status.tone} />
           </View>
         );
       })}

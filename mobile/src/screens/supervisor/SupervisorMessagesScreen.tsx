@@ -5,6 +5,8 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { useFocusPolling } from '@/hooks/useFocusPolling';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { ScreenHeader } from '@/components/supervisor/ScreenHeader';
 import { Initials, ListRow } from '@/components/supervisor/ListRow';
 import { SplitView } from '@/components/supervisor/SplitView';
@@ -45,19 +47,24 @@ export default function SupervisorMessagesScreen({ route, navigation }: Props) {
     if (!token || inFlight.current) return;
     inFlight.current = true;
     try {
-      const [nextThreads, nextTeam] = await Promise.all([listChatThreads(token), getTeam(token)]);
-      setThreads(nextThreads);
-      setTeam(nextTeam);
-      setUpdatedAt(formatClock(new Date().toISOString()));
-      setError(null);
+      const fetchAll = () => Promise.all([listChatThreads(token), getTeam(token)]);
+      const apply = ([nextThreads, nextTeam]: Awaited<ReturnType<typeof fetchAll>>) => {
+        setThreads(nextThreads);
+        setTeam(nextTeam);
+      };
+      const result = await loadWithCache(user?.id, 'threads', fetchAll, (cached) => apply(cached.value));
+      apply(result.value);
+      setUpdatedAt(formatSavedAt(result.savedAt));
+      setError(result.fromCache ? 'Hors ligne' : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger les messages.');
     } finally {
       inFlight.current = false;
     }
-  }, [token]);
+  }, [token, user?.id]);
 
   useFocusPolling(load, 20_000);
+  const refreshControl = usePullToRefresh(load);
 
   const withThread = new Set(threads.map((t) => t.agent.id));
   const others = team.filter((a) => !withThread.has(a.id));
@@ -66,7 +73,7 @@ export default function SupervisorMessagesScreen({ route, navigation }: Props) {
     threads.find((t) => t.agent.id === selectedId)?.agent.name ?? team.find((a) => a.id === selectedId)?.name ?? 'Agent';
 
   const list = (
-    <ScrollView contentContainerStyle={styles.list}>
+    <ScrollView contentContainerStyle={styles.list} refreshControl={refreshControl}>
       {threads.length === 0 ? <Text style={styles.empty}>Aucune discussion pour l'instant.</Text> : null}
       {threads.map((t) => {
         const mine = t.lastMessage.senderId !== t.agent.id;
@@ -155,7 +162,7 @@ const styles = StyleSheet.create({
   error: { fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.status.absent },
   groupTitle: { fontFamily: theme.fonts.body, fontSize: 15, color: theme.colors.muted, marginTop: 12 },
   trailing: { alignItems: 'flex-end', gap: 6 },
-  when: { fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted },
+  when: { fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted },
   badge: {
     minWidth: 26,
     height: 26,

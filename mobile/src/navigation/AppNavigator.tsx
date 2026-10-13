@@ -32,6 +32,7 @@ import AdminWebOnlyScreen from '@/screens/AdminWebOnlyScreen';
 import { useAuthContext } from '@/context/AuthContext';
 import { navigationRef } from './navigationRef';
 import { SupervisorNavigator } from './SupervisorNavigator';
+import { spaceForRole } from './spaceForRole';
 import { AgentStackParamList, AgentTabParamList, AuthStackParamList, RootStackParamList } from './types';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -127,7 +128,7 @@ export function AppNavigator() {
   const ready = hasCompletedOnboarding !== null && isAuthReady;
   const showOnboarding = hasCompletedOnboarding === false;
   const showAuth = hasCompletedOnboarding === true && !user;
-  const role = user?.role?.toUpperCase();
+  const space = user ? spaceForRole(user.role) : null;
 
   const loader = useMemo(
     () => (
@@ -154,11 +155,9 @@ export function AppNavigator() {
         {showAuth ? <RootStack.Screen name="Auth" component={AuthNavigator} /> : null}
 
         {/* Aiguillage par rôle : chaque profil n'a accès qu'à son propre espace. */}
-        {role === 'AGENT' ? <RootStack.Screen name="Agent" component={AgentNavigator} /> : null}
-        {role === 'SUPERVISOR' ? <RootStack.Screen name="Supervisor" component={SupervisorNavigator} /> : null}
-        {user && role !== 'AGENT' && role !== 'SUPERVISOR' ? (
-          <RootStack.Screen name="AdminWebOnly" component={AdminWebOnlyScreen} />
-        ) : null}
+        {space === 'Agent' ? <RootStack.Screen name="Agent" component={AgentNavigator} /> : null}
+        {space === 'Supervisor' ? <RootStack.Screen name="Supervisor" component={SupervisorNavigator} /> : null}
+        {space === 'AdminWebOnly' ? <RootStack.Screen name="AdminWebOnly" component={AdminWebOnlyScreen} /> : null}
       </RootStack.Navigator>
     </NavigationContainer>
   );

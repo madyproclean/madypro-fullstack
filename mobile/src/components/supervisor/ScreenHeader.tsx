@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/config/theme';
 import { useLayout } from '@/hooks/useLayout';
+import { OfflineBanner } from './OfflineBanner';
 
 type Props = {
   title: string;
@@ -18,32 +19,36 @@ type Props = {
 export const ScreenHeader: React.FC<Props> = ({ title, subtitle, updatedAt, onRefresh, right }) => {
   const { isWide } = useLayout();
   return (
-    <View style={[styles.header, !isWide && styles.stacked]}>
-      <View style={styles.text}>
-        <Text accessibilityRole="header" style={styles.title}>
-          {title}
-        </Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+    <View style={styles.wrapper}>
+      <View style={[styles.header, !isWide && styles.stacked]}>
+        <View style={styles.text}>
+          <Text accessibilityRole="header" style={styles.title}>
+            {title}
+          </Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        </View>
+        <View style={styles.actions}>
+          {right}
+          {updatedAt ? <Text style={styles.updated}>Mis à jour à {updatedAt}</Text> : null}
+          {onRefresh ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Actualiser"
+              onPress={onRefresh}
+              style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="refresh" size={20} color={theme.colors.ink} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
-      <View style={styles.actions}>
-        {right}
-        {updatedAt ? <Text style={styles.updated}>Mis à jour à {updatedAt}</Text> : null}
-        {onRefresh ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Actualiser"
-            onPress={onRefresh}
-            style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.7 }]}
-          >
-            <Ionicons name="refresh" size={20} color={theme.colors.ink} />
-          </Pressable>
-        ) : null}
-      </View>
+      <OfflineBanner />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  wrapper: { gap: 16 },
   header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 },
   stacked: { flexDirection: 'column', alignItems: 'flex-start' },
   text: { gap: 4, flexShrink: 1 },

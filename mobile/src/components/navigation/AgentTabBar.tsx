@@ -56,6 +56,8 @@ export const AgentTabBar: React.FC<AgentTabBarProps> = ({ state, navigation, ico
             <TouchableOpacity
               key={route.key}
               accessibilityRole="button"
+              // Onglets sans texte visible : le libellé est lu par le lecteur d'écran.
+              accessibilityLabel={showBadge ? `${meta.label}, nouvelles notifications` : meta.label}
               accessibilityState={isFocused ? { selected: true } : {}}
               onPress={onPress}
               onLongPress={onLongPress}

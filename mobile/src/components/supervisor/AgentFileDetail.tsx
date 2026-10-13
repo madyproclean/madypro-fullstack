@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { StatusPill, StatusTone } from '@/components/ui/StatusPill';
 import { getAgentFile } from '@/services/api/supervision.api';
 import { AgentDay, AgentFile } from '@/types/supervision';
@@ -59,20 +60,24 @@ type Props = {
 
 /** Fiche agent : appel, SMS, message, situation du jour, heures, certifications, missions, absences. */
 export const AgentFileDetail: React.FC<Props> = ({ agentId, onMessage, onOpenMission, onOpenAbsence, onOpenSite }) => {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const [file, setFile] = useState<AgentFile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Renseigné quand la fiche affichée vient du cache (hors ligne). */
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      setFile(await getAgentFile(token, agentId));
+      const result = await loadWithCache(user?.id, `agent:${agentId}`, () => getAgentFile(token, agentId));
+      setFile(result.value);
+      setSavedAt(result.fromCache ? result.savedAt : null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger la fiche.');
     }
-  }, [token, agentId]);
+  }, [token, agentId, user?.id]);
 
   useEffect(() => {
     setFile(null);
@@ -96,12 +101,17 @@ export const AgentFileDetail: React.FC<Props> = ({ agentId, onMessage, onOpenMis
   return (
     <View style={styles.card}>
       <ScrollView contentContainerStyle={styles.content}>
+        {savedAt ? (
+          <Text accessibilityRole="alert" style={styles.offline}>
+            Hors ligne : fiche telle qu'enregistrée le {formatSavedAt(savedAt)}.
+          </Text>
+        ) : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
           <Initials name={file.name} size={60} />
           <View style={{ flex: 1, gap: 6 }}>
             <Text style={styles.title}>{file.name}</Text>
             <View style={{ flexDirection: 'row' }}>
-              <StatusPill label={day.label} tone={day.tone} />
+              <StatusPill strong label={day.label} tone={day.tone} />
             </View>
             {day.detail ? <Text style={styles.muted}>{day.detail}</Text> : null}
           </View>
@@ -198,7 +208,7 @@ export const AgentFileDetail: React.FC<Props> = ({ agentId, onMessage, onOpenMis
                     {formatDayShort(a.from)} au {formatDayShort(a.to)}
                   </Text>
                 </View>
-                <StatusPill label={status.label} tone={status.tone} />
+                <StatusPill strong label={status.label} tone={status.tone} />
               </Pressable>
             );
           })}
@@ -218,7 +228,7 @@ export const AgentFileDetail: React.FC<Props> = ({ agentId, onMessage, onOpenMis
                       : 'Sans date de fin'}
                   </Text>
                 </View>
-                {state ? <StatusPill label={state.label} tone={state.tone} /> : null}
+                {state ? <StatusPill strong label={state.label} tone={state.tone} /> : null}
               </View>
             );
           })}

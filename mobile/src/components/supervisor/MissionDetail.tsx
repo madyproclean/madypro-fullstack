@@ -4,9 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { StatusPill } from '@/components/ui/StatusPill';
-import { getInterventionById, InterventionChecklistItem, listInterventionChecklist, updateInterventionStatus } from '@/services/api/interventions.api';
+import { fetchInterventionById, InterventionChecklistItem, listInterventionChecklist, updateInterventionStatus } from '@/services/api/interventions.api';
 import { listAnomalies, updateAnomalyStatus } from '@/services/api/anomalies.api';
 import { listMissionAttendance, listMyRequests } from '@/services/api/supervision.api';
+import { ApiError } from '@/services/api/client';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { Intervention } from '@/types/intervention';
 import { Anomaly } from '@/types/anomaly';
 import { ApprovalRequest, MissionAttendance } from '@/types/supervision';
@@ -30,9 +32,11 @@ type Loaded = {
 
 /** Détail d'une mission : pointages, checklist, anomalies, photos, et validation si elle est à valider. */
 export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) => {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const [data, setData] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Renseigné quand la mission affichée vient du cache (hors ligne). */
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,12 +44,8 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
 
   const load = useCallback(async () => {
     if (!token) return;
-    try {
-      const mission = await getInterventionById(token, interventionId);
-      if (!mission) {
-        setLoadError("Cette mission est introuvable ou n'est pas sur l'un de vos sites.");
-        return;
-      }
+    const fetchAll = async (): Promise<Loaded> => {
+      const mission = await fetchInterventionById(token, interventionId);
       // Les éléments secondaires ne doivent pas empêcher d'afficher la mission.
       const [attendance, checklist, anomalies, requests] = await Promise.all([
         listMissionAttendance(token, interventionId).catch(() => []),
@@ -54,12 +54,23 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
         listMyRequests(token).catch(() => [] as ApprovalRequest[]),
       ]);
       const pendingRequests = requests.filter((r) => r.entityId === interventionId && r.status === 'PENDING');
-      setData({ mission, attendance, checklist, anomalies, pendingRequests });
+      return { mission, attendance, checklist, anomalies, pendingRequests };
+    };
+    try {
+      const result = await loadWithCache(user?.id, `mission:${interventionId}`, fetchAll);
+      setData(result.value);
+      setSavedAt(result.fromCache ? result.savedAt : null);
       setLoadError(null);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Impossible de charger la mission.');
+      setLoadError(
+        err instanceof ApiError && (err.status === 403 || err.status === 404)
+          ? "Cette mission est introuvable ou n'est pas sur l'un de vos sites."
+          : err instanceof Error
+            ? err.message
+            : 'Impossible de charger la mission.',
+      );
     }
-  }, [token, interventionId]);
+  }, [token, interventionId, user?.id]);
 
   useEffect(() => {
     setData(null);
@@ -134,6 +145,12 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
 
   return (
     <ScrollView style={styles.card} contentContainerStyle={styles.content}>
+      {savedAt ? (
+        <View style={styles.warning}>
+          <Ionicons name="cloud-offline-outline" size={20} color={theme.colors.ink} />
+          <Text style={styles.warningText}>Hors ligne : mission telle qu'enregistrée le {formatSavedAt(savedAt)}.</Text>
+        </View>
+      ) : null}
       <View style={styles.titleRow}>
         <View style={styles.titleText}>
           <Text accessibilityRole="header" style={styles.title}>
@@ -145,7 +162,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
           </Text>
           {mission.siteAddress ? <Text style={styles.muted}>{mission.siteAddress}</Text> : null}
         </View>
-        <StatusPill label={status.label} tone={status.tone} />
+        <StatusPill strong label={status.label} tone={status.tone} />
       </View>
 
       <Section title="Pointages">
@@ -219,7 +236,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
                   </Text>
                 </View>
                 {anomaly.status === 'RESOLVED' ? (
-                  <StatusPill label="Traitée" tone="success" />
+                  <StatusPill strong label="Traitée" tone="success" />
                 ) : (
                   <ActionButton label="Marquer traitée" onPress={() => resolveAnomaly(anomaly)} />
                 )}

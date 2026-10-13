@@ -92,6 +92,14 @@ export const detailStyles = StyleSheet.create({
   },
   rowText: { flex: 1, gap: 2 },
   errorText: { fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.status.absent },
+  offline: {
+    fontFamily: theme.fonts.bodyMedium,
+    fontSize: 16,
+    color: theme.colors.ink,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: theme.colors.status.lateSoft,
+  },
   placeholder: {
     flex: 1,
     alignItems: 'center',

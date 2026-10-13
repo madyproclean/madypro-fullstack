@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { useFocusPolling } from '@/hooks/useFocusPolling';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { ScreenHeader } from '@/components/supervisor/ScreenHeader';
 import { ListRow } from '@/components/supervisor/ListRow';
@@ -12,7 +14,7 @@ import { Segmented } from '@/components/supervisor/Segmented';
 import { SplitView } from '@/components/supervisor/SplitView';
 import { MissionDetail } from '@/components/supervisor/MissionDetail';
 import { MissionRequestSheet } from '@/components/supervisor/MissionRequestSheet';
-import { addDays, formatClock, formatDayLong, missionStatus, toISODate } from '@/components/supervisor/format';
+import { addDays, formatDayLong, missionStatus, toISODate } from '@/components/supervisor/format';
 import { fetchInterventions } from '@/services/api/interventions.api';
 import { Intervention } from '@/types/intervention';
 import { SupervisorTabParamList } from '@/navigation/types';
@@ -30,8 +32,10 @@ const STATUS_ORDER: Record<string, number> = {
   CANCELLED: 5,
 };
 
+const RowGap = () => <View style={{ height: 10 }} />;
+
 export default function SupervisorMissionsScreen({ route, navigation }: Props) {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const [range, setRange] = useState<Range>('day');
   const [missions, setMissions] = useState<Intervention[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -53,23 +57,29 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
     if (!token || inFlight.current) return;
     inFlight.current = true;
     const today = new Date();
+    const startDate = toISODate(today);
+    const endDate = toISODate(range === 'day' ? today : addDays(today, 6));
+    const show = (list: Intervention[]) => setMissions(list.filter((m) => m.status !== 'CANCELLED'));
     try {
-      const list = await fetchInterventions(token, {
-        startDate: toISODate(today),
-        endDate: toISODate(range === 'day' ? today : addDays(today, 6)),
-        pageSize: 500,
-      });
-      setMissions(list.filter((m) => m.status !== 'CANCELLED'));
-      setUpdatedAt(formatClock(new Date().toISOString()));
-      setError(null);
+      // La date fait partie de la clé : jamais les missions d'hier présentées comme celles du jour.
+      const result = await loadWithCache(
+        user?.id,
+        `missions:${startDate}:${endDate}`,
+        () => fetchInterventions(token, { startDate, endDate, pageSize: 500 }),
+        (cached) => show(cached.value),
+      );
+      show(result.value);
+      setUpdatedAt(formatSavedAt(result.savedAt));
+      setError(result.fromCache ? 'Hors ligne' : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger les missions.');
     } finally {
       inFlight.current = false;
     }
-  }, [token, range]);
+  }, [token, range, user?.id]);
 
   useFocusPolling(load);
+  const refreshControl = usePullToRefresh(load);
 
   const groups = useMemo(() => {
     const byDate = new Map<string, Intervention[]>();
@@ -80,51 +90,65 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
           (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
           a.startTime.localeCompare(b.startTime),
       )
-      .forEach((m) => byDate.set(m.date, [...(byDate.get(m.date) ?? []), m]));
-    return [...byDate.entries()];
+      .forEach((m) => {
+        const day = byDate.get(m.date);
+        if (day) day.push(m);
+        else byDate.set(m.date, [m]);
+      });
+    return [...byDate.entries()].map(([date, data]) => ({ date, data }));
   }, [missions]);
 
   const toValidate = missions.filter((m) => m.status === 'NEEDS_REVIEW').length;
   const selected = missions.find((m) => m.id === selectedId);
 
+  // Liste virtualisée : une semaine peut compter des centaines de missions sur une tablette modeste.
   const list = (
-    <ScrollView contentContainerStyle={styles.list}>
-      {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {updatedAt ? 'Mise à jour impossible : liste de la dernière mise à jour.' : error}
-        </Text>
-      ) : null}
-      {groups.length === 0 && !error ? (
-        <Text style={styles.empty}>
-          {range === 'day' ? "Aucune mission aujourd'hui sur vos sites." : 'Aucune mission cette semaine sur vos sites.'}
-        </Text>
-      ) : null}
-      {groups.map(([date, items]) => (
-        <View key={date} style={styles.group}>
-          {range === 'week' ? (
-            <Text accessibilityRole="header" style={styles.groupTitle}>
-              {formatDayLong(date)}
+    <SectionList
+      sections={groups}
+      keyExtractor={(mission) => mission.id}
+      contentContainerStyle={styles.list}
+      refreshControl={refreshControl}
+      stickySectionHeadersEnabled={false}
+      initialNumToRender={12}
+      windowSize={7}
+      ListHeaderComponent={
+        <>
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {updatedAt ? 'Mise à jour impossible : liste de la dernière mise à jour.' : error}
             </Text>
           ) : null}
-          {items.map((mission) => {
-            const status = missionStatus(mission);
-            const agentCount = mission.agents.length;
-            return (
-              <ListRow
-                key={mission.id}
-                title={mission.siteName}
-                subtitle={`${mission.startTime} – ${mission.endTime} · ${
-                  agentCount ? `${agentCount} agent${agentCount > 1 ? 's' : ''}` : 'aucun agent'
-                }`}
-                selected={mission.id === selectedId}
-                onPress={() => setSelectedId(mission.id)}
-                trailing={<StatusPill label={status.label} tone={status.tone} />}
-              />
-            );
-          })}
-        </View>
-      ))}
-    </ScrollView>
+          {groups.length === 0 && !error ? (
+            <Text style={styles.empty}>
+              {range === 'day' ? "Aucune mission aujourd'hui sur vos sites." : 'Aucune mission cette semaine sur vos sites.'}
+            </Text>
+          ) : null}
+        </>
+      }
+      renderSectionHeader={({ section }) =>
+        range === 'week' ? (
+          <Text accessibilityRole="header" style={styles.groupTitle}>
+            {formatDayLong(section.date)}
+          </Text>
+        ) : null
+      }
+      ItemSeparatorComponent={RowGap}
+      renderItem={({ item: mission }) => {
+        const status = missionStatus(mission);
+        const agentCount = mission.agents.length;
+        return (
+          <ListRow
+            title={mission.siteName}
+            subtitle={`${mission.startTime} – ${mission.endTime} · ${
+              agentCount ? `${agentCount} agent${agentCount > 1 ? 's' : ''}` : 'aucun agent'
+            }`}
+            selected={mission.id === selectedId}
+            onPress={() => setSelectedId(mission.id)}
+            trailing={<StatusPill strong label={status.label} tone={status.tone} />}
+          />
+        );
+      }}
+    />
   );
 
   return (
@@ -182,9 +206,8 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, padding: 32, gap: 20, backgroundColor: theme.colors.cream },
-  list: { gap: 16, paddingBottom: 16 },
-  group: { gap: 10 },
-  groupTitle: { fontFamily: theme.fonts.bodyBold, fontSize: 16, color: theme.colors.ink, marginTop: 4 },
+  list: { paddingBottom: 16 },
+  groupTitle: { fontFamily: theme.fonts.bodyBold, fontSize: 16, color: theme.colors.ink, marginTop: 16, marginBottom: 10 },
   empty: { fontFamily: theme.fonts.body, fontSize: 16, color: theme.colors.muted, textAlign: 'center' },
   error: { fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.status.absent },
   newButton: {

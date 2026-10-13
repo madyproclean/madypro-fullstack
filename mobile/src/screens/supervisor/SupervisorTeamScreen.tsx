@@ -5,6 +5,8 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { useFocusPolling } from '@/hooks/useFocusPolling';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { ScreenHeader } from '@/components/supervisor/ScreenHeader';
 import { Initials, ListRow } from '@/components/supervisor/ListRow';
@@ -13,7 +15,6 @@ import { SplitView } from '@/components/supervisor/SplitView';
 import { detailStyles } from '@/components/supervisor/DetailBlocks';
 import { AgentFileDetail, agentDayLabel } from '@/components/supervisor/AgentFileDetail';
 import { SiteFileDetail } from '@/components/supervisor/SiteFileDetail';
-import { formatClock } from '@/components/supervisor/format';
 import { getTeam, listSupervisedSites } from '@/services/api/supervision.api';
 import { SupervisedSite, TeamAgent } from '@/types/supervision';
 import { SupervisorTabParamList } from '@/navigation/types';
@@ -29,7 +30,7 @@ const normalize = (value: string) =>
     .toLowerCase();
 
 export default function SupervisorTeamScreen({ route, navigation }: Props) {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const [tab, setTab] = useState<Tab>('agents');
   const [agents, setAgents] = useState<TeamAgent[]>([]);
   const [sites, setSites] = useState<SupervisedSite[]>([]);
@@ -57,19 +58,24 @@ export default function SupervisorTeamScreen({ route, navigation }: Props) {
     if (!token || inFlight.current) return;
     inFlight.current = true;
     try {
-      const [nextAgents, nextSites] = await Promise.all([getTeam(token), listSupervisedSites(token)]);
-      setAgents(nextAgents);
-      setSites([...nextSites].sort((a, b) => a.name.localeCompare(b.name, 'fr')));
-      setUpdatedAt(formatClock(new Date().toISOString()));
-      setError(null);
+      const fetchAll = () => Promise.all([getTeam(token), listSupervisedSites(token)]);
+      const apply = ([nextAgents, nextSites]: Awaited<ReturnType<typeof fetchAll>>) => {
+        setAgents(nextAgents);
+        setSites([...nextSites].sort((a, b) => a.name.localeCompare(b.name, 'fr')));
+      };
+      const result = await loadWithCache(user?.id, 'team', fetchAll, (cached) => apply(cached.value));
+      apply(result.value);
+      setUpdatedAt(formatSavedAt(result.savedAt));
+      setError(result.fromCache ? 'Hors ligne' : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger l'équipe.");
     } finally {
       inFlight.current = false;
     }
-  }, [token]);
+  }, [token, user?.id]);
 
   useFocusPolling(load, 60_000);
+  const refreshControl = usePullToRefresh(load);
 
   const query = normalize(search.trim());
   const visibleAgents = agents.filter((a) => !query || normalize(a.name).includes(query));
@@ -86,7 +92,7 @@ export default function SupervisorTeamScreen({ route, navigation }: Props) {
   const openMission = (interventionId: string) => navigation.navigate('SupervisorMissions', { interventionId });
 
   const agentList = (
-    <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.list} refreshControl={refreshControl} keyboardShouldPersistTaps="handled">
       {visibleAgents.length === 0 ? (
         <Text style={styles.empty}>{query ? 'Aucun agent ne correspond.' : 'Aucun agent sur vos sites.'}</Text>
       ) : null}
@@ -102,8 +108,8 @@ export default function SupervisorTeamScreen({ route, navigation }: Props) {
             leading={<Initials name={agent.name} />}
             below={
               <>
-                <StatusPill label={day.label} tone={day.tone} />
-                {agent.expiringCertifications ? <StatusPill label="Certification à renouveler" tone="warning" /> : null}
+                <StatusPill strong label={day.label} tone={day.tone} />
+                {agent.expiringCertifications ? <StatusPill strong label="Certification à renouveler" tone="warning" /> : null}
               </>
             }
           />
@@ -113,7 +119,7 @@ export default function SupervisorTeamScreen({ route, navigation }: Props) {
   );
 
   const siteList = (
-    <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.list} refreshControl={refreshControl} keyboardShouldPersistTaps="handled">
       {visibleSites.length === 0 ? (
         <Text style={styles.empty}>{query ? 'Aucun site ne correspond.' : "Aucun site ne vous est confié."}</Text>
       ) : null}

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 import { theme } from '@/config/theme';
+import { MARKER_LIVE, MARKER_STALE } from './mapColors';
 import { LiveAgent, SupervisedSite } from '@/types/supervision';
 import { formatAgo, STALE_SIGNAL_MINUTES } from './format';
 
@@ -92,12 +93,13 @@ export const SupervisionMap: React.FC<SupervisionMapProps> = ({ sites, agents, s
               title={agent.agentName}
               description={`${agent.siteName} · signal ${formatAgo(agent.lastSeenAt)}`}
               onPress={() => onSelectAgent?.(agent)}
+              accessibilityLabel={`${agent.agentName}, ${agent.siteName}, signal ${formatAgo(agent.lastSeenAt)}`}
               tracksViewChanges={selected}
             >
               <View
                 style={[
                   styles.agentMarker,
-                  { backgroundColor: stale ? theme.colors.status.late : theme.colors.status.onTime },
+                  { backgroundColor: stale ? MARKER_STALE : MARKER_LIVE },
                   selected && styles.agentSelected,
                 ]}
               >
@@ -122,14 +124,14 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
   },
   agentMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 3,
     borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  agentSelected: { width: 44, height: 44, borderRadius: 22, borderColor: theme.colors.ink },
-  agentInitials: { color: '#fff', fontFamily: theme.fonts.bodyBold, fontSize: 13 },
+  agentSelected: { width: 52, height: 52, borderRadius: 26, borderColor: theme.colors.ink },
+  agentInitials: { color: '#fff', fontFamily: theme.fonts.bodyBold, fontSize: 15 },
 });

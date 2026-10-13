@@ -8,6 +8,8 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useLayout } from '@/hooks/useLayout';
 import { StatusPill, StatusTone } from '@/components/ui/StatusPill';
 import { getSupervisorToday } from '@/services/api/supervision.api';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
+import { OfflineBanner } from '@/components/supervisor/OfflineBanner';
 import { SupervisorToday, TodayTask } from '@/types/supervision';
 import { SupervisorTabParamList } from '@/navigation/types';
 
@@ -42,11 +44,8 @@ const formatDay = (isoDate: string) => {
 const formatShortDate = (isoDate: string) =>
   new Date(`${isoDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 
-const formatClock = (iso: string) =>
-  new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
 export default function SupervisorTodayScreen({ navigation }: Props) {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const { isWide } = useLayout();
   const [data, setData] = useState<SupervisorToday | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,8 +58,11 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
       inFlight.current = true;
       if (manual) setRefreshing(true);
       try {
-        setData(await getSupervisorToday(token));
-        setError(null);
+        const result = await loadWithCache(user?.id, 'today', () => getSupervisorToday(token), (cached) =>
+          setData((current) => current ?? cached.value),
+        );
+        setData(result.value);
+        setError(result.fromCache ? 'Hors ligne' : null);
       } catch (err) {
         // On garde la dernière situation affichée : l'heure de mise à jour indique son âge.
         setError(err instanceof Error ? err.message : 'Impossible de charger la situation du jour.');
@@ -69,7 +71,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [token],
+    [token, user?.id],
   );
 
   // Rafraîchissement régulier tant que l'écran est affiché et l'app au premier plan.
@@ -190,7 +192,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
           ) : null}
         </View>
         <View style={styles.headerActions}>
-          {data ? <Text style={styles.updated}>Mis à jour à {formatClock(data.generatedAt)}</Text> : null}
+          {data ? <Text style={styles.updated}>Mis à jour à {formatSavedAt(data.generatedAt)}</Text> : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Actualiser"
@@ -202,6 +204,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
         </View>
       </View>
 
+      <OfflineBanner />
       {error ? (
         <View accessibilityRole="alert" style={styles.errorBanner}>
           <Ionicons name="cloud-offline-outline" size={20} color={theme.colors.status.absent} />
@@ -209,6 +212,16 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
             {data ? 'Mise à jour impossible : la situation affichée date de la dernière mise à jour.' : error}
           </Text>
           <ActionButton label="Réessayer" onPress={() => load(true)} />
+        </View>
+      ) : null}
+
+      {data && data.siteCount === 0 ? (
+        <View style={styles.noSites}>
+          <Ionicons name="business-outline" size={22} color={theme.colors.primaryDark} />
+          <Text style={styles.errorText}>
+            Aucun site ne vous est encore confié : vos agents et vos missions apparaîtront ici dès que l'administrateur
+            vous aura rattaché à vos sites.
+          </Text>
         </View>
       ) : null}
 
@@ -232,7 +245,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
                 <Text accessibilityRole="header" style={styles.cardTitle}>
                   À traiter
                 </Text>
-                {tasks.length ? <StatusPill label={String(tasks.length)} tone="danger" hideIcon /> : null}
+                {tasks.length ? <StatusPill strong label={String(tasks.length)} tone="danger" hideIcon /> : null}
               </View>
               {tasks.length === 0 ? (
                 <View style={styles.empty}>
@@ -247,7 +260,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
                   return (
                     <View key={key} style={styles.task}>
                       <View style={styles.taskText}>
-                        <StatusPill label={meta.label} tone={meta.tone} />
+                        <StatusPill strong label={meta.label} tone={meta.tone} />
                         <Text style={styles.taskTitle}>{text.title}</Text>
                         <Text style={styles.taskSub}>{text.sub}</Text>
                       </View>
@@ -267,7 +280,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
                   <Text style={styles.statusLabel}>{row.label}</Text>
                   {/* StatusPill s'aligne en haut par défaut : on la centre dans la ligne. */}
                   <View style={styles.statusValue}>
-                    <StatusPill label={String(row.value)} tone={row.tone} hideIcon />
+                    <StatusPill strong label={String(row.value)} tone={row.tone} hideIcon />
                   </View>
                 </View>
               ))}
@@ -348,6 +361,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.status.absentSoft,
   },
   errorText: { flex: 1, fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.ink },
+  noSites: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: theme.colors.primarySoft,
+  },
   kpis: { flexDirection: 'row', gap: 14 },
   kpisWrap: { flexWrap: 'wrap' },
   kpi: {

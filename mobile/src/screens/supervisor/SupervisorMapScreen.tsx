@@ -5,10 +5,12 @@ import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { useLayout } from '@/hooks/useLayout';
 import { useFocusPolling } from '@/hooks/useFocusPolling';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { ScreenHeader } from '@/components/supervisor/ScreenHeader';
 import { Initials, ListRow } from '@/components/supervisor/ListRow';
 import { SupervisionMap } from '@/components/supervisor/SupervisionMap';
+import { MARKER_LIVE, MARKER_STALE } from '@/components/supervisor/mapColors';
 import { formatAgo, formatClock, STALE_SIGNAL_MINUTES } from '@/components/supervisor/format';
 import { getLiveAgents, listSupervisedSites } from '@/services/api/supervision.api';
 import { LiveAgent, SupervisedSite } from '@/types/supervision';
@@ -19,7 +21,7 @@ type Props = BottomTabScreenProps<SupervisorTabParamList, 'SupervisorMap'>;
 const isStale = (agent: LiveAgent) => Date.now() - new Date(agent.lastSeenAt).getTime() > STALE_SIGNAL_MINUTES * 60_000;
 
 export default function SupervisorMapScreen({ navigation }: Props) {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const { isWide } = useLayout();
   const [sites, setSites] = useState<SupervisedSite[]>([]);
   const [agents, setAgents] = useState<LiveAgent[]>([]);
@@ -32,9 +34,18 @@ export default function SupervisorMapScreen({ navigation }: Props) {
     if (!token || inFlight.current) return;
     inFlight.current = true;
     try {
-      const [nextSites, nextAgents] = await Promise.all([listSupervisedSites(token), getLiveAgents(token)]);
-      setSites(nextSites);
-      setAgents(nextAgents);
+      // Seuls les sites sont gardés hors ligne : d'anciennes positions d'agents induiraient en erreur.
+      const sitesResult = await loadWithCache(user?.id, 'sites', () => listSupervisedSites(token), (cached) =>
+        setSites(cached.value),
+      );
+      setSites(sitesResult.value);
+      if (sitesResult.fromCache) {
+        setAgents([]);
+        setUpdatedAt(formatSavedAt(sitesResult.savedAt));
+        setError('Hors ligne');
+        return;
+      }
+      setAgents(await getLiveAgents(token));
       setUpdatedAt(formatClock(new Date().toISOString()));
       setError(null);
     } catch (err) {
@@ -42,7 +53,7 @@ export default function SupervisorMapScreen({ navigation }: Props) {
     } finally {
       inFlight.current = false;
     }
-  }, [token]);
+  }, [token, user?.id]);
 
   useFocusPolling(load);
 
@@ -77,7 +88,7 @@ export default function SupervisorMapScreen({ navigation }: Props) {
               onPress={() => setSelectedId(agent.userId)}
               accessibilityHint="Centre la carte sur cet agent"
               leading={<Initials name={agent.agentName} />}
-              trailing={<StatusPill label={stale ? 'Signal ancien' : 'Sur place'} tone={stale ? 'warning' : 'success'} />}
+              trailing={<StatusPill strong label={stale ? 'Signal ancien' : 'Sur place'} tone={stale ? 'warning' : 'success'} />}
             />
           );
         })
@@ -92,7 +103,11 @@ export default function SupervisorMapScreen({ navigation }: Props) {
       <ScreenHeader title="Carte" subtitle="Où sont vos agents en ce moment" updatedAt={updatedAt} onRefresh={load} />
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
-          {updatedAt ? 'Mise à jour impossible : positions de la dernière mise à jour.' : error}
+          {error === 'Hors ligne'
+            ? 'Positions des agents indisponibles hors ligne : seuls vos sites sont affichés.'
+            : updatedAt
+              ? 'Mise à jour impossible : positions de la dernière mise à jour.'
+              : error}
         </Text>
       ) : null}
       <View style={[styles.body, !isWide && styles.bodyStacked]}>
@@ -101,8 +116,8 @@ export default function SupervisorMapScreen({ navigation }: Props) {
           <SupervisionMap sites={sites} agents={agents} selectedAgentId={selectedId} onSelectAgent={(a) => setSelectedId(a.userId)} />
           <View style={styles.legend}>
             <Legend color={theme.colors.primaryDark} square label="Site" />
-            <Legend color={theme.colors.status.onTime} label="Agent sur place" />
-            <Legend color={theme.colors.status.late} label={`Signal de plus de ${STALE_SIGNAL_MINUTES} min`} />
+            <Legend color={MARKER_LIVE} label="Agent sur place" />
+            <Legend color={MARKER_STALE} label={`Signal de plus de ${STALE_SIGNAL_MINUTES} min`} />
             {selected ? (
               <Text
                 accessibilityRole="link"

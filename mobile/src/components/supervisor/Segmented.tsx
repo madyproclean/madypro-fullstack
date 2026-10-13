@@ -35,7 +35,7 @@ export function Segmented<T extends string>({ options, value, onChange, accessib
 
 const styles = StyleSheet.create({
   group: { flexDirection: 'row', gap: 4, padding: 4, borderRadius: 14, backgroundColor: theme.colors.status.pendingSoft },
-  item: { minHeight: 44, paddingHorizontal: 18, borderRadius: 11, justifyContent: 'center' },
+  item: { minHeight: 48, paddingHorizontal: 18, borderRadius: 11, justifyContent: 'center' },
   active: {
     backgroundColor: theme.colors.shell,
     shadowColor: '#0B1620',

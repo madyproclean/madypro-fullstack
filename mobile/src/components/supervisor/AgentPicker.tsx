@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   muted: { fontFamily: theme.fonts.body, fontSize: 15, color: theme.colors.muted },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    minHeight: 40,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

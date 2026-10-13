@@ -4,6 +4,7 @@ import { AuthUser } from '../types/auth';
 import { AUTH_STORAGE_KEY, NOTIFICATION_STORAGE_KEY } from '../config/storage';
 import { secureStorage } from '../services/secureStorage';
 import { setUnauthorizedHandler } from '../services/api/client';
+import { SUPERVISOR_CACHE_PREFIX } from '../services/supervisorCache';
 import { useToast } from './ToastContext';
 
 interface AuthContextValue {
@@ -70,7 +71,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     AsyncStorage.getAllKeys()
       .then((keys) => {
         const keysToRemove = keys.filter(
-          (key) => key === 'syncQueue' || key === NOTIFICATION_STORAGE_KEY || key.startsWith('intervention:start:'),
+          (key) =>
+            key === 'syncQueue' ||
+            key === NOTIFICATION_STORAGE_KEY ||
+            key.startsWith('intervention:start:') ||
+            key.startsWith(SUPERVISOR_CACHE_PREFIX),
         );
         if (keysToRemove.length) {
           AsyncStorage.multiRemove(keysToRemove).catch(() => {});

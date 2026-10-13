@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { getSiteFile, getSiteQrCode } from '@/services/api/supervision.api';
 import { SiteFile } from '@/types/supervision';
@@ -32,9 +33,11 @@ type Props = {
 
 /** Fiche site : itinéraire, accès et code, contact, missions du jour, checklists, incidents, QR code. */
 export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMission }) => {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const [file, setFile] = useState<SiteFile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Renseigné quand la fiche affichée vient du cache (hors ligne). */
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
@@ -44,12 +47,14 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      setFile(await getSiteFile(token, siteId));
+      const result = await loadWithCache(user?.id, `site:${siteId}`, () => getSiteFile(token, siteId));
+      setFile(result.value);
+      setSavedAt(result.fromCache ? result.savedAt : null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger la fiche.');
     }
-  }, [token, siteId]);
+  }, [token, siteId, user?.id]);
 
   useEffect(() => {
     setFile(null);
@@ -87,6 +92,11 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
   return (
     <View style={styles.card}>
       <ScrollView contentContainerStyle={styles.content}>
+        {savedAt ? (
+          <Text accessibilityRole="alert" style={styles.offline}>
+            Hors ligne : fiche telle qu'enregistrée le {formatSavedAt(savedAt)}.
+          </Text>
+        ) : null}
         <View style={{ gap: 4 }}>
           <Text style={styles.title}>{file.name}</Text>
           <Text style={styles.muted}>{file.address}</Text>
@@ -188,7 +198,7 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
                   {formatDayShort(toISODate(new Date(i.createdAt)))} · signalé par {i.reportedBy}
                 </Text>
               </View>
-              <StatusPill label={i.status === 'NEW' ? 'À traiter' : 'Résolu'} tone={i.status === 'NEW' ? 'warning' : 'success'} />
+              <StatusPill strong label={i.status === 'NEW' ? 'À traiter' : 'Résolu'} tone={i.status === 'NEW' ? 'warning' : 'success'} />
             </View>
           ))}
         </DetailSection>

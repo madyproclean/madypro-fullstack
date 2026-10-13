@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +16,7 @@ import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
 import { getChatThread, markChatRead, sendChatMessage } from '@/services/api/supervision.api';
 import { ChatMessage } from '@/types/supervision';
+import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { formatClock, formatDayShort, toISODate } from './format';
 import { ActionButton } from './DetailBlocks';
 
@@ -45,11 +47,12 @@ export const ChatConversation: React.FC<Props> = ({ agentId, agentName, onChange
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const next = await getChatThread(token, agentId);
+      const result = await loadWithCache(user?.id, `chat:${agentId}`, () => getChatThread(token, agentId));
+      const next = result.value;
       setMessages(next);
-      setError(null);
+      setError(result.fromCache ? `Hors ligne : messages enregistrés le ${formatSavedAt(result.savedAt)}.` : null);
       // Marque lus les nouveaux messages de l'agent dès qu'ils s'affichent.
-      const unread = next.some((m) => m.senderId === agentId && !m.readAt);
+      const unread = !result.fromCache && next.some((m) => m.senderId === agentId && !m.readAt);
       const last = next[next.length - 1]?.id ?? null;
       if (unread) {
         await markChatRead(token, agentId).catch(() => undefined);
@@ -62,14 +65,15 @@ export const ChatConversation: React.FC<Props> = ({ agentId, agentName, onChange
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger la discussion.');
     }
-  }, [token, agentId, onChanged]);
+  }, [token, agentId, onChanged, user?.id]);
 
   useEffect(() => {
     setMessages(null);
     setDraft('');
     lastSeen.current = null;
     load();
-    const timer = setInterval(load, REFRESH_MS);
+    // Suspendu en arrière-plan (batterie) ; reprise au retour au premier plan.
+    const timer = setInterval(() => AppState.currentState === 'active' && load(), REFRESH_MS);
     return () => clearInterval(timer);
   }, [load]);
 
@@ -177,12 +181,12 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontFamily: theme.fonts.display, fontSize: 22, color: theme.colors.ink },
   messages: { padding: 16, gap: 8 },
   empty: { fontFamily: theme.fonts.body, fontSize: 16, color: theme.colors.muted, textAlign: 'center', paddingVertical: 24 },
-  day: { fontFamily: theme.fonts.bodyMedium, fontSize: 13, color: theme.colors.muted, textAlign: 'center', marginVertical: 8 },
+  day: { fontFamily: theme.fonts.bodyMedium, fontSize: 14, color: theme.colors.muted, textAlign: 'center', marginVertical: 8 },
   bubble: { maxWidth: '78%', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 16, gap: 4 },
   bubbleAgent: { alignSelf: 'flex-start', backgroundColor: theme.colors.cream, borderBottomLeftRadius: 4 },
   bubbleMine: { alignSelf: 'flex-end', backgroundColor: theme.colors.primaryDark, borderBottomRightRadius: 4 },
   body: { fontFamily: theme.fonts.body, fontSize: 16, color: theme.colors.ink, lineHeight: 22 },
-  meta: { fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.muted },
+  meta: { fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted },
   error: { fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.status.absent, paddingHorizontal: 16 },
   composer: {
     flexDirection: 'row',

@@ -147,7 +147,7 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
             {absence.site ? ` · ${absence.site.name}` : ''}
           </Text>
         </View>
-        <StatusPill label={status.label} tone={status.tone} />
+        <StatusPill strong label={status.label} tone={status.tone} />
       </View>
 
       <View style={styles.section}>
@@ -258,7 +258,8 @@ const Button: React.FC<{ label: string; onPress: () => void; primary?: boolean; 
   <Pressable
     accessibilityRole="button"
     accessibilityState={{ disabled: !!disabled }}
-    onPress={disabled ? undefined : onPress}
+    disabled={disabled}
+    onPress={onPress}
     style={({ pressed }) => [
       styles.button,
       primary && styles.primary,

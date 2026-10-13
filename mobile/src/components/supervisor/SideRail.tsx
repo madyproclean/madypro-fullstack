@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   },
   logoLetter: { color: '#fff', fontFamily: theme.fonts.display, fontSize: 20 },
   brandName: { fontFamily: theme.fonts.display, fontSize: 19, color: theme.colors.ink },
-  brandSub: { fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted },
+  brandSub: { fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted },
   item: {
     minHeight: 52,
     flexDirection: 'row',
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   itemActive: { backgroundColor: theme.colors.primarySoft },
   itemPressed: { opacity: 0.7 },
   label: { fontFamily: theme.fonts.bodyMedium, fontSize: 17 },
-  labelCompact: { fontFamily: theme.fonts.bodyMedium, fontSize: 12 },
+  labelCompact: { fontFamily: theme.fonts.bodyMedium, fontSize: 13 },
   labelActive: { fontFamily: theme.fonts.bodySemiBold },
   footer: { marginTop: 'auto', borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 12, gap: 6 },
   badge: {
