@@ -11,9 +11,9 @@ import {
   getReplacementSuggestions,
   getTeamAbsence,
 } from '@/services/api/supervision.api';
-import { ReplacementSuggestions, TeamAbsence } from '@/types/supervision';
+import { DayOccurrence, ReplacementSuggestions, TeamAbsence } from '@/types/supervision';
 import { formatDayShort } from './format';
-import { TemplateEditorSheet } from './TemplateEditorSheet';
+import { DayChangeSheet } from './DayChangeSheet';
 
 export const ABSENCE_LABELS: Record<string, string> = {
   SICK: 'Arrêt maladie',
@@ -43,8 +43,8 @@ type Props = {
 /**
  * Détail d'une absence de l'équipe : approuver ou refuser (motif obligatoire) ; pour une absence
  * de plus de 5 jours, première validation seulement, l'administrateur donnant l'accord final.
- * Une fois approuvée, liste les missions touchées et les agents disponibles ; le remplacement se
- * fait en modifiant le gabarit du site (seule source du planning).
+ * Une fois approuvée, liste les passages prévus de l'agent et les agents disponibles ; le
+ * remplacement vaut pour ce seul jour, le gabarit du site ne change pas.
  */
 export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }) => {
   const { token } = useAuthContext();
@@ -55,7 +55,7 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<ReplacementSuggestions | null>(null);
-  const [templateSiteId, setTemplateSiteId] = useState<string | null>(null);
+  const [replacement, setReplacement] = useState<{ occurrence: DayOccurrence; agentIds: string[] } | null>(null);
 
   useEffect(() => {
     setAbsence(initial ?? null);
@@ -202,23 +202,54 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
           {!suggestions ? (
             <ActivityIndicator color={theme.colors.primary} />
           ) : suggestions.interventions.length === 0 ? (
-            <Text style={styles.muted}>Aucune mission à venir de cet agent pendant l'absence.</Text>
+            <Text style={styles.muted}>Aucun passage de cet agent n'est prévu pendant l'absence.</Text>
           ) : (
             suggestions.interventions.map((item) => (
-              <View key={item.interventionId} style={styles.mission}>
+              <View key={`${item.stopId}:${item.date}`} style={styles.mission}>
                 <Text style={styles.bold}>
                   {item.siteName} · {formatDayShort(item.date)} · {item.startTime} – {item.endTime}
                 </Text>
                 <Text style={styles.muted}>
-                  {item.candidates.length
-                    ? `Disponibles : ${item.candidates
-                        .slice(0, 3)
-                        .map((c) => c.name)
-                        .join(', ')}`
-                    : 'Aucun agent disponible sur ce créneau.'}
+                  {item.candidates.length ? 'Agents disponibles :' : 'Aucun agent disponible sur ce créneau.'}
                 </Text>
-                <View style={styles.candidate}>
-                  <Button label="Modifier le gabarit du site" onPress={() => setTemplateSiteId(item.siteId)} />
+                <View style={[styles.candidate, { flexWrap: 'wrap' }]}>
+                  {item.candidates.slice(0, 3).map((c) => (
+                    <Button
+                      key={c.id}
+                      label={`Prévoir ${c.name}`}
+                      onPress={() =>
+                        setReplacement({
+                          occurrence: {
+                            templateId: item.templateId,
+                            stopId: item.stopId,
+                            date: item.date,
+                            siteName: item.siteName,
+                            startTime: item.startTime,
+                            endTime: item.endTime,
+                            agentIds: item.agentIds,
+                          },
+                          agentIds: [...item.agentIds.filter((id) => id !== absence.agent.id), c.id],
+                        })
+                      }
+                    />
+                  ))}
+                  <Button
+                    label="Autre agent"
+                    onPress={() =>
+                      setReplacement({
+                        occurrence: {
+                          templateId: item.templateId,
+                          stopId: item.stopId,
+                          date: item.date,
+                          siteName: item.siteName,
+                          startTime: item.startTime,
+                          endTime: item.endTime,
+                          agentIds: item.agentIds,
+                        },
+                        agentIds: item.agentIds.filter((id) => id !== absence.agent.id),
+                      })
+                    }
+                  />
                 </View>
               </View>
             ))
@@ -226,7 +257,16 @@ export const AbsenceDetail: React.FC<Props> = ({ absenceId, initial, onChanged }
         </View>
       ) : null}
 
-      <TemplateEditorSheet visible={templateSiteId !== null} siteId={templateSiteId} onClose={() => setTemplateSiteId(null)} />
+      <DayChangeSheet
+        occurrence={replacement?.occurrence ?? null}
+        mode="replace"
+        suggestedAgentIds={replacement?.agentIds}
+        onClose={() => setReplacement(null)}
+        onDone={() => {
+          loadSuggestions();
+          onChanged?.();
+        }}
+      />
     </ScrollView>
   );
 };

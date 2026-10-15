@@ -5,7 +5,8 @@ export type ApprovalActionType =
   | 'UNASSIGN_AGENT'
   | 'CANCEL_INTERVENTION'
   | 'CREATE_TEMPLATE_BATCH'
-  | 'VALIDATE_TEMPLATE';
+  | 'VALIDATE_TEMPLATE'
+  | 'CANCEL_OCCURRENCE';
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
 
@@ -31,6 +32,8 @@ export type ApprovalRequest = {
   actionType: ApprovalActionType;
   entityType: string;
   entityId: string | null;
+  /** Résumé lisible calculé par le serveur. */
+  summary?: string;
   payload: Record<string, unknown>;
   previousState: Record<string, unknown> | null;
   status: ApprovalStatus;

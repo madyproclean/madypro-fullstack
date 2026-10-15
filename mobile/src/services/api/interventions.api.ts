@@ -187,6 +187,7 @@ function mapIntervention(intervention: ApiIntervention): Intervention {
     truckLabels: intervention.truckLabels ?? [],
     observation: intervention.observation,
     generatedFromStopId: (intervention as { generatedFromStopId?: string }).generatedFromStopId,
+    generatedFromTemplateId: (intervention as { generatedFromTemplateId?: string }).generatedFromTemplateId,
     hasAnomaly: false,
     siteAddress: intervention.siteAddress,
     siteLatitude: toNumber(intervention.siteLatitude),

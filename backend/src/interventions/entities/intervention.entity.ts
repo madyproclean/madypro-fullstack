@@ -47,5 +47,9 @@ export class InterventionTemplateEntity {
   validatedById?: string | null;
   createdAt!: Date;
   updatedAt!: Date;
+  /** Modification proposée en attente de validation (la version actuelle reste active). */
+  pendingVersion?: Record<string, unknown> | null;
+  pendingRequestedAt?: Date | null;
+  pendingRequestedByName?: string | null;
   stops: TemplateStopEntity[] = [];
 }

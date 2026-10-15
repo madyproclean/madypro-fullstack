@@ -10,6 +10,7 @@ import {
   LeaveBalance,
 } from '../../services/api/absences.api';
 import { Absence, AbsenceStatus } from '../../types/absence';
+import { createTemplateException } from '../../services/api/interventions.api';
 import { useAuthContext } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { PromptModal } from '../../components/ui/PromptModal';
@@ -35,6 +36,27 @@ export const AbsenceDetailPage: React.FC = () => {
   const [absence, setAbsence] = useState<Absence | null>(null);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<ReplacementSuggestion | null>(null);
+
+  /** Remplace l'agent absent par ce candidat, pour ce seul jour. */
+  const replaceForDay = async (
+    item: ReplacementSuggestion['interventions'][number],
+    candidate: { id: string; name: string },
+  ) => {
+    if (!token || !absence) return;
+    try {
+      await createTemplateException(token, item.templateId, {
+        stopId: item.stopId,
+        date: item.date,
+        kind: 'REPLACE_AGENTS',
+        agentIds: [...item.agentIds.filter((agentId) => agentId !== absence.agent.id), candidate.id],
+        reason: 'Absence',
+      });
+      notify(`${candidate.name} est prévu à la place le ${item.date}`);
+      setSuggestions(await getReplacementSuggestions(token, absence.id));
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Remplacement impossible', 'error');
+    }
+  };
   const [leaveBalance, setLeaveBalance] = useState<LeaveBalance | null>(null);
   const [decisionPrompt, setDecisionPrompt] = useState<AbsenceStatus | null>(null);
   const navigate = useNavigate();
@@ -187,17 +209,26 @@ export const AbsenceDetailPage: React.FC = () => {
       {absence.status === 'APPROVED' && suggestions && suggestions.interventions.length > 0 && (
         <section className="panel" style={{ marginTop: '1.5rem' }}>
           <h3 style={{ marginTop: 0 }}>Suggestions de remplacement</h3>
+          <p className="form-helper" style={{ marginTop: 0 }}>
+            Cliquez sur un agent pour le prévoir à la place, ce jour-là seulement (le gabarit du site ne change pas).
+          </p>
           {suggestions.interventions.map((intervention) => (
-            <div key={intervention.interventionId} style={{ marginBottom: '1rem' }}>
+            <div key={`${intervention.stopId}:${intervention.date}`} style={{ marginBottom: '1rem' }}>
               <strong>
                 {intervention.siteName} · {intervention.date} {intervention.startTime}–{intervention.endTime}
               </strong>
               {intervention.candidates.length ? (
                 <div className="chips" style={{ marginTop: '0.5rem' }}>
                   {intervention.candidates.map((candidate) => (
-                    <span key={candidate.id} className="chip">
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      className="chip"
+                      onClick={() => replaceForDay(intervention, candidate)}
+                      title={`Prévoir ${candidate.name} ce jour-là`}
+                    >
                       {candidate.name}
-                    </span>
+                    </button>
                   ))}
                 </div>
               ) : (

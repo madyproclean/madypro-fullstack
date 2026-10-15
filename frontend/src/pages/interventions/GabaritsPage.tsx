@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Play, Pencil, Power, Check, X, Eye } from 'lucide-react';
+import { Plus, Play, Pencil, Power, Check, X, Eye, History, CalendarX } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import {
   listTemplates,
@@ -9,12 +9,16 @@ import {
   previewTemplate,
   generateTemplate,
   getTemplateAgentSuggestions,
+  previewTemplateImpact,
   CreateTemplatePayload,
   TemplateStopPayload,
 } from '../../services/api/interventions.api';
 import { listSites, listSiteCategories } from '../../services/api/sites.api';
 import { listUsers } from '../../services/api/users.api';
-import { InterventionTemplate, TemplatePreview, TemplateAgentSuggestion } from '../../types/intervention';
+import { InterventionTemplate, TemplatePreview, TemplateAgentSuggestion, TemplateImpact } from '../../types/intervention';
+import { TemplateImpactPanel } from '../../components/interventions/TemplateImpactPanel';
+import { TemplateHistoryModal } from '../../components/interventions/TemplateHistoryModal';
+import { TemplateExceptionsModal } from '../../components/interventions/TemplateExceptionsModal';
 import { SiteCategory } from '../../types/category';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
@@ -122,6 +126,10 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
   const [submitting, setSubmitting] = useState(false);
   const [suggestionsByStop, setSuggestionsByStop] = useState<Record<number, TemplateAgentSuggestion>>({});
   const [suggestionsLoadingStop, setSuggestionsLoadingStop] = useState<number | null>(null);
+  // Enregistrement en deux temps : d'abord l'aperçu des missions qui changent, puis la confirmation.
+  const [impact, setImpact] = useState<TemplateImpact | null>(null);
+  const [historyFor, setHistoryFor] = useState<InterventionTemplate | null>(null);
+  const [exceptionsFor, setExceptionsFor] = useState<InterventionTemplate | null>(null);
 
   const [generateTemplateId, setGenerateTemplateId] = useState<string | null>(null);
   const [generatePeriod, setGeneratePeriod] = useState<'day' | 'week' | 'custom'>('week');
@@ -141,6 +149,9 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
   };
 
   useEffect(load, [token]);
+
+  // Toute modification du formulaire rend l'aperçu obsolète.
+  useEffect(() => setImpact(null), [form, formOpen]);
 
   useEffect(() => {
     if (!token) return;
@@ -185,13 +196,16 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
 
   const openEditForm = (template: InterventionTemplate) => {
     setEditingId(template.id);
+    // Une modification est déjà en attente : on repart d'elle plutôt que de la version en place.
+    const pending = template.pendingVersion as Partial<InterventionTemplate> | null | undefined;
+    const stops = pending?.stops ?? template.stops;
     setForm({
-      label: template.label,
+      label: pending?.label ?? template.label,
       siteId: template.siteId,
-      startDate: template.startDate.slice(0, 10),
-      endDate: template.endDate ? template.endDate.slice(0, 10) : '',
-      stops: template.stops.length
-        ? template.stops.map((s) => ({
+      startDate: (pending?.startDate ?? template.startDate).slice(0, 10),
+      endDate: (pending?.endDate ?? template.endDate) ? (pending?.endDate ?? template.endDate)!.slice(0, 10) : '',
+      stops: stops.length
+        ? stops.map((s) => ({
             id: s.id,
             recurring: !s.specificDate,
             daysOfWeek: s.daysOfWeek,
@@ -316,9 +330,15 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
           ...form.stops.map((s, index) => stopRowToPayload(s, baseStops.length + index)),
         ],
       };
+      if (!impact) {
+        setImpact(await previewTemplateImpact(token, targetId, payload));
+        return;
+      }
       const saved = targetId ? await updateTemplate(token, targetId, payload) : await createTemplate(token, payload);
       notify(
-        saved.validatedAt
+        saved.pendingVersion
+          ? 'Modification envoyée à l’administrateur — la version actuelle reste active en attendant'
+          : saved.validatedAt
           ? 'Gabarit enregistré et validé'
           : 'Gabarit enregistré — en attente de validation par un admin',
       );
@@ -476,6 +496,15 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
                       <Badge tone={template.validatedAt ? 'success' : 'warning'}>
                         {template.validatedAt ? 'Validé' : 'En attente de validation'}
                       </Badge>
+                      {template.pendingVersion && (
+                        <div style={{ marginTop: 4 }}>
+                          <Badge tone="info">Modification en attente</Badge>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-muted)' }}>
+                            {template.pendingRequestedByName ? `par ${template.pendingRequestedByName} · ` : ''}la version actuelle reste
+                            active
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <Badge tone={template.active ? 'success' : 'warning'}>
@@ -496,6 +525,12 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
                         </Button>
                         <Button type="button" variant="ghost" className="btn--compact" icon={Pencil} onClick={() => openEditForm(template)}>
                           Modifier
+                        </Button>
+                        <Button type="button" variant="ghost" className="btn--compact" icon={CalendarX} onClick={() => setExceptionsFor(template)}>
+                          Changer un jour
+                        </Button>
+                        <Button type="button" variant="ghost" className="btn--compact" icon={History} onClick={() => setHistoryFor(template)}>
+                          Historique
                         </Button>
                         <Button type="button" variant="ghost" className="btn--compact" icon={Power} onClick={() => handleToggleActive(template)}>
                           {template.active ? 'Désactiver' : 'Activer'}
@@ -708,9 +743,17 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
                 </div>
               </div>
 
+              {impact && <TemplateImpactPanel impact={impact} />}
+
               <div className="form-actions">
-                <Button type="submit" icon={Check} loading={submitting} disabled={isInvalid}>
-                  {editingId ? 'Mettre à jour' : mergeTarget ? "Ajouter l'arrêt au gabarit" : 'Créer le gabarit'}
+                <Button type="submit" icon={impact ? Check : Eye} loading={submitting} disabled={isInvalid}>
+                  {!impact
+                    ? 'Voir l’effet sur le planning'
+                    : editingId
+                    ? 'Confirmer la mise à jour'
+                    : mergeTarget
+                    ? "Confirmer l'ajout de l'arrêt"
+                    : 'Confirmer la création'}
                 </Button>
                 <Button type="button" variant="ghost" icon={X} onClick={() => setFormOpen(false)}>
                   Annuler
@@ -719,6 +762,14 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
             </form>
         </ModalBody>
       </Modal>
+
+      <TemplateHistoryModal
+        template={historyFor}
+        agentName={(id) => agentOptions.find((a) => a.id === id)?.name ?? 'Agent'}
+        onClose={() => setHistoryFor(null)}
+        onRestored={load}
+      />
+      <TemplateExceptionsModal template={exceptionsFor} agentOptions={agentOptions} onClose={() => setExceptionsFor(null)} />
 
       <Modal open={Boolean(generateTemplateId)} onClose={() => setGenerateTemplateId(null)} maxWidth={700} labelledBy="gabarit-generate-title">
         <ModalHeader eyebrow="Génération" title={generatingTemplate?.label ?? ''} titleId="gabarit-generate-title" onClose={() => setGenerateTemplateId(null)} />

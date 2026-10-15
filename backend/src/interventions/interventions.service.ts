@@ -30,7 +30,14 @@ import { AuditService } from '../audit/audit.service';
 import { haversineDistanceMeters } from '../common/utils/geo';
 import { checkAssignmentConflicts as checkAssignmentConflictsShared } from '../common/utils/assignment-conflicts.util';
 import { checkAttendanceCompleteness } from './attendance-completeness.util';
-import { computeTemplateOccurrences, findStopConflicts, TemplateStopLike, TemplateGroup } from './recurrence.util';
+import {
+  applyTemplateExceptions,
+  computeTemplateOccurrences,
+  findStopConflicts,
+  TemplateExceptionLike,
+  TemplateStopLike,
+  TemplateGroup,
+} from './recurrence.util';
 import { ApprovalsService } from '../approvals/approvals.service';
 
 export type InterventionFilters = {
@@ -1123,9 +1130,17 @@ export class InterventionsService implements OnModuleInit {
     validatedById: string | null;
     createdAt: Date;
     updatedAt: Date;
+    pendingVersion?: Prisma.JsonValue | null;
+    pendingRequestedById?: string | null;
+    pendingRequestedAt?: Date | null;
     stops: { id: string; daysOfWeek: number[]; intervalWeeks: number; specificDate: Date | null; categoryId: string | null; startTime: string; endTime: string; agentIds: string[]; order: number }[];
   }): InterventionTemplateEntity {
     return {
+      pendingVersion: (template.pendingVersion as any) ?? null,
+      pendingRequestedAt: template.pendingRequestedAt ?? null,
+      pendingRequestedByName: template.pendingRequestedById
+        ? this.usersService.findOne(template.pendingRequestedById)?.name ?? null
+        : null,
       id: template.id,
       label: template.label,
       siteId: template.siteId,
@@ -1301,6 +1316,7 @@ export class InterventionsService implements OnModuleInit {
         summary: `Validation du gabarit — ${template.label} (${site.name})`,
       });
     } else {
+      await this.recordRevision(template, actorId, actorId, 'Création');
       // Évite d'attendre le prochain passage du job (jusqu'à 5 min) pour un arrêt imminent.
       await this.generateImminentInterventionsFromTemplates();
     }
@@ -1336,7 +1352,81 @@ export class InterventionsService implements OnModuleInit {
     }
     const startDate = dto.startDate !== undefined ? new Date(dto.startDate) : existing.startDate;
     const endDate = dto.endDate !== undefined ? (dto.endDate ? new Date(dto.endDate) : null) : existing.endDate;
-    const stopsForCheck: TemplateStopLike[] = dto.stops
+    await this.assertNoConflicts(id, site, startDate, endDate, this.stopsForCheck(dto, existing.stops));
+
+    const isAdmin = actorRole === 'ADMIN';
+    const approvalPayload = { templateLabel: dto.label ?? existing.label, siteId: site.id, siteName: site.name };
+
+    // Gabarit déjà validé modifié par un superviseur : la proposition est mise de côté et la version
+    // actuelle continue de générer les missions jusqu'à la validation de l'administrateur.
+    if (!isAdmin && existing.validatedAt) {
+      const proposal: UpdateTemplateDto = {
+        label: dto.label ?? existing.label,
+        siteId,
+        startDate: startDate.toISOString(),
+        endDate: endDate ? endDate.toISOString() : (null as any),
+        active: dto.active ?? existing.active,
+        stops: dto.stops ?? existing.stops.map((s) => this.snapshotStop(s)),
+      };
+      const template = await this.prisma.interventionTemplate.update({
+        where: { id },
+        data: { pendingVersion: proposal as any, pendingRequestedById: actorId, pendingRequestedAt: new Date() },
+        include: { stops: true },
+      });
+      this.auditService.record({
+        actorId,
+        action: 'PROPOSE_TEMPLATE_CHANGE',
+        entityType: 'InterventionTemplate',
+        entityId: id,
+        details: `${site.name} : modification proposée, en attente de validation`,
+      });
+      await this.approvals.createRequest({
+        actionType: 'VALIDATE_TEMPLATE',
+        entityType: 'InterventionTemplate',
+        entityId: id,
+        payload: { ...approvalPayload, pending: true },
+        requestedById: actorId,
+        summary: `Modification du gabarit — ${proposal.label} (${site.name})`,
+      });
+      return this.presentTemplate(template);
+    }
+
+    const template = await this.applyTemplateChange(
+      existing,
+      dto,
+      actorId,
+      isAdmin
+        ? { validatedAt: new Date(), validatedById: actorId, ...this.clearPending() }
+        : // Gabarit jamais validé : il reste « à valider » (aucune mission générée avant validation).
+          { validatedAt: null, validatedById: null },
+    );
+    if (!isAdmin) {
+      await this.approvals.createRequest({
+        actionType: 'VALIDATE_TEMPLATE',
+        entityType: 'InterventionTemplate',
+        entityId: id,
+        payload: approvalPayload,
+        requestedById: actorId,
+        summary: `Validation du gabarit — ${template.label} (${site.name})`,
+      });
+    } else {
+      if (existing.pendingVersion) {
+        // La modification de l'administrateur remplace la proposition en attente.
+        await this.approvals.supersedePending('InterventionTemplate', id, 'VALIDATE_TEMPLATE');
+      }
+      await this.recordRevision(template, actorId, actorId);
+      // Évite d'attendre le prochain passage du job (jusqu'à 5 min) pour un arrêt imminent.
+      await this.generateImminentInterventionsFromTemplates();
+    }
+    return this.presentTemplate(template);
+  }
+
+  private clearPending() {
+    return { pendingVersion: Prisma.DbNull, pendingRequestedById: null, pendingRequestedAt: null };
+  }
+
+  private stopsForCheck(dto: UpdateTemplateDto, existingStops: Parameters<InterventionsService['toStopLike']>[0][]): TemplateStopLike[] {
+    return dto.stops
       ? dto.stops.map((s, index) => ({
           id: s.id ?? `new-${index}`,
           daysOfWeek: s.daysOfWeek ?? [],
@@ -1347,28 +1437,77 @@ export class InterventionsService implements OnModuleInit {
           endTime: s.endTime,
           agentIds: s.agentIds ?? [],
         }))
-      : existing.stops.map((s) => this.toStopLike(s));
-    await this.assertNoConflicts(id, site, startDate, endDate, stopsForCheck);
+      : existingStops.map((s) => this.toStopLike(s));
+  }
 
-    const isAdmin = actorRole === 'ADMIN';
-    const data: Prisma.InterventionTemplateUncheckedUpdateInput = {};
+  private snapshotStop(s: {
+    id: string;
+    daysOfWeek: number[];
+    intervalWeeks: number;
+    specificDate: Date | null;
+    categoryId: string | null;
+    startTime: string;
+    endTime: string;
+    agentIds: string[];
+    order: number;
+  }) {
+    return {
+      id: s.id,
+      daysOfWeek: s.daysOfWeek,
+      intervalWeeks: s.intervalWeeks,
+      specificDate: s.specificDate ? s.specificDate.toISOString().slice(0, 10) : undefined,
+      categoryId: s.categoryId ?? undefined,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      agentIds: s.agentIds,
+      order: s.order,
+    };
+  }
+
+  /** Enregistre la version appliquée d'un gabarit dans son historique. */
+  private async recordRevision(
+    template: { id: string; label: string; startDate: Date; endDate: Date | null; active: boolean; stops: Parameters<InterventionsService['snapshotStop']>[0][] },
+    authorId: string | null,
+    approvedById: string | null,
+    note?: string,
+  ) {
+    await this.prisma.templateRevision.create({
+      data: {
+        templateId: template.id,
+        snapshot: {
+          label: template.label,
+          startDate: template.startDate.toISOString(),
+          endDate: template.endDate ? template.endDate.toISOString() : null,
+          active: template.active,
+          stops: template.stops
+            .slice()
+            .sort((a, b) => a.order - b.order)
+            .map((s) => this.snapshotStop(s)),
+        },
+        authorId,
+        approvedById,
+        note: note ?? null,
+      },
+    });
+  }
+
+  /** Applique une modification au gabarit (créneaux compris) et trace chaque créneau changé. */
+  private async applyTemplateChange(
+    existing: Prisma.InterventionTemplateGetPayload<{ include: { stops: true; site: { select: { id: true; name: true } } } }>,
+    dto: UpdateTemplateDto,
+    actorId: string,
+    extra: Prisma.InterventionTemplateUncheckedUpdateInput,
+  ) {
+    const id = existing.id;
+    const data: Prisma.InterventionTemplateUncheckedUpdateInput = { ...extra };
     if (dto.label !== undefined) data.label = dto.label;
     if (dto.siteId !== undefined) data.siteId = dto.siteId;
     if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
     if (dto.endDate !== undefined) data.endDate = dto.endDate ? new Date(dto.endDate) : null;
     if (dto.active !== undefined) data.active = dto.active;
-    if (isAdmin) {
-      data.validatedAt = new Date();
-      data.validatedById = actorId;
-    } else {
-      // Une modification par un non-admin invalide la validation précédente : re-approbation requise.
-      data.validatedAt = null;
-      data.validatedById = null;
-    }
-
     const siteName = existing.site.name;
 
-    const template = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       if (dto.stops) {
         const existingStopById = new Map(existing.stops.map((s) => [s.id, s]));
         const incomingIds = new Set(dto.stops.filter((s) => s.id).map((s) => s.id as string));
@@ -1447,30 +1586,34 @@ export class InterventionsService implements OnModuleInit {
         include: { stops: true },
       });
     });
-    if (!isAdmin) {
-      await this.approvals.createRequest({
-        actionType: 'VALIDATE_TEMPLATE',
-        entityType: 'InterventionTemplate',
-        entityId: id,
-        payload: { templateLabel: template.label, siteId: template.siteId, siteName: site.name },
-        requestedById: actorId,
-        summary: `Validation du gabarit — ${template.label} (${site.name})`,
-      });
-    } else {
-      // Évite d'attendre le prochain passage du job (jusqu'à 5 min) pour un arrêt imminent.
-      await this.generateImminentInterventionsFromTemplates();
-    }
-    return this.presentTemplate(template);
   }
 
-  /** Re-vérifie les conflits inter-gabarits (au cas où un autre gabarit aurait changé entretemps) puis valide. */
-  async validateTemplate(templateId: string, reviewerId: string) {
+  /**
+   * Re-vérifie les conflits inter-gabarits (au cas où un autre gabarit aurait changé entretemps) puis
+   * valide. Si une modification est en attente, c'est elle qui est appliquée puis validée.
+   */
+  async validateTemplate(templateId: string, reviewerId: string, requestedById: string | null = null) {
     const template = await this.prisma.interventionTemplate.findUnique({
       where: { id: templateId },
       include: { stops: true, site: { select: { id: true, name: true } } },
     });
     if (!template) {
       throw new NotFoundException('Gabarit introuvable');
+    }
+    if (template.pendingVersion) {
+      const proposal = template.pendingVersion as unknown as UpdateTemplateDto;
+      const startDate = proposal.startDate ? new Date(proposal.startDate) : template.startDate;
+      const endDate = proposal.endDate ? new Date(proposal.endDate) : null;
+      await this.assertNoConflicts(template.id, template.site, startDate, endDate, this.stopsForCheck(proposal, template.stops));
+      const author = template.pendingRequestedById ?? requestedById;
+      const updated = await this.applyTemplateChange(template, proposal, author ?? reviewerId, {
+        validatedAt: new Date(),
+        validatedById: reviewerId,
+        ...this.clearPending(),
+      });
+      await this.recordRevision(updated, author, reviewerId);
+      await this.generateImminentInterventionsFromTemplates();
+      return this.presentTemplate(updated);
     }
     const stops = template.stops.map((s) => this.toStopLike(s));
     await this.assertNoConflicts(template.id, template.site, template.startDate, template.endDate, stops);
@@ -1479,8 +1622,462 @@ export class InterventionsService implements OnModuleInit {
       data: { validatedAt: new Date(), validatedById: reviewerId },
       include: { stops: true },
     });
+    await this.recordRevision(updated, requestedById, reviewerId);
     await this.generateImminentInterventionsFromTemplates();
     return this.presentTemplate(updated);
+  }
+
+  /** Proposition refusée : on l'écarte, la version en place reste inchangée. */
+  async discardPendingTemplate(templateId: string) {
+    await this.prisma.interventionTemplate.updateMany({
+      where: { id: templateId, pendingVersion: { not: Prisma.DbNull } },
+      data: this.clearPending(),
+    });
+  }
+
+  async listTemplateRevisions(templateId: string) {
+    await this.getTemplate(templateId);
+    const revisions = await this.prisma.templateRevision.findMany({
+      where: { templateId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    const name = (id: string | null) => (id ? this.usersService.findOne(id)?.name ?? 'Utilisateur supprimé' : null);
+    return revisions.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      authorName: name(r.authorId),
+      approvedByName: name(r.approvedById),
+      note: r.note,
+      snapshot: r.snapshot,
+    }));
+  }
+
+  /** Administrateur : remet en place une version précédente (elle devient une nouvelle version). */
+  async restoreTemplateRevision(templateId: string, revisionId: string, adminId: string) {
+    const revision = await this.prisma.templateRevision.findUnique({ where: { id: revisionId } });
+    if (!revision || revision.templateId !== templateId) {
+      throw new NotFoundException('Version introuvable');
+    }
+    const snapshot = revision.snapshot as any;
+    const current = await this.prisma.templateStop.findMany({ where: { templateId }, select: { id: true } });
+    const currentIds = new Set(current.map((s) => s.id));
+    const dto: UpdateTemplateDto = {
+      label: snapshot.label,
+      startDate: snapshot.startDate,
+      endDate: snapshot.endDate,
+      active: snapshot.active,
+      // Un créneau supprimé depuis est recréé (nouvel identifiant).
+      stops: (snapshot.stops ?? []).map((s: any) => ({ ...s, id: currentIds.has(s.id) ? s.id : undefined })),
+    };
+    const restored = await this.updateTemplate(templateId, dto, adminId, 'ADMIN');
+    this.auditService.record({
+      actorId: adminId,
+      action: 'RESTORE_TEMPLATE_REVISION',
+      entityType: 'InterventionTemplate',
+      entityId: templateId,
+      details: `Retour à la version du ${revision.createdAt.toISOString().slice(0, 10)}`,
+    });
+    return restored;
+  }
+
+  /** Exceptions datées des gabarits donnés sur une période, regroupées par gabarit. */
+  private async loadExceptions(templateIds: string[], start: Date, end: Date) {
+    const byTemplate = new Map<string, TemplateExceptionLike[]>();
+    if (!templateIds.length) return byTemplate;
+    const rows = await this.prisma.templateException.findMany({
+      where: { templateId: { in: templateIds }, date: { gte: start, lte: end } },
+    });
+    for (const row of rows) {
+      const list = byTemplate.get(row.templateId) ?? [];
+      list.push({ stopId: row.stopId, date: row.date.toISOString().slice(0, 10), kind: row.kind, agentIds: row.agentIds, reason: row.reason });
+      byTemplate.set(row.templateId, list);
+    }
+    return byTemplate;
+  }
+
+  private todayParis() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+  }
+
+  async listTemplateExceptions(templateId: string, from?: string) {
+    await this.getTemplate(templateId);
+    const rows = await this.prisma.templateException.findMany({
+      where: { templateId, date: { gte: this.toDateOnly(from ?? this.todayParis()) } },
+      orderBy: { date: 'asc' },
+    });
+    const name = (id: string) => this.usersService.findOne(id)?.name ?? 'Agent inconnu';
+    return rows.map((r) => ({
+      id: r.id,
+      stopId: r.stopId,
+      date: r.date.toISOString().slice(0, 10),
+      kind: r.kind,
+      agents: r.agentIds.map((id) => ({ id, name: name(id) })),
+      reason: r.reason,
+      createdByName: r.createdById ? this.usersService.findOne(r.createdById)?.name ?? null : null,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /**
+   * Exception datée sur un créneau du gabarit : remplacer les agents d'un seul jour (absence,
+   * échange) ou annuler ce jour-là (site fermé). Le gabarit lui-même ne change pas. Une annulation
+   * demandée par un superviseur passe par la validation de l'administrateur.
+   */
+  async createTemplateException(
+    templateId: string,
+    dto: { stopId: string; date: string; kind: 'CANCEL' | 'REPLACE_AGENTS'; agentIds?: string[]; reason?: string },
+    actor: { id: string; role: string },
+  ) {
+    const template = await this.prisma.interventionTemplate.findUnique({
+      where: { id: templateId },
+      include: { stops: true, site: { select: { id: true, name: true } } },
+    });
+    if (!template) throw new NotFoundException('Gabarit introuvable');
+    const stop = template.stops.find((s) => s.id === dto.stopId);
+    if (!stop) throw new NotFoundException('Créneau introuvable dans ce gabarit');
+    const date = (dto.date ?? '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new BadRequestException('Date invalide');
+    if (date < this.todayParis()) throw new BadRequestException('Impossible de modifier un jour passé');
+    const day = this.toDateOnly(date);
+    const occurs = computeTemplateOccurrences(
+      { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
+      [this.toStopLike(stop)],
+      day,
+      day,
+    );
+    if (!occurs.length) throw new BadRequestException("Ce créneau n'a pas lieu ce jour-là");
+
+    const real = await this.prisma.intervention.findFirst({
+      where: { generatedFromStopId: stop.id, date: day },
+      include: { assignments: true },
+    });
+    if (real && real.status !== 'PLANNED') {
+      throw new BadRequestException('La mission de ce jour a déjà commencé ou est terminée : elle ne peut plus être modifiée.');
+    }
+
+    if (dto.kind === 'CANCEL') {
+      const reason = dto.reason?.trim();
+      if (!reason) throw new BadRequestException("Le motif est obligatoire pour annuler un créneau");
+      if (actor.role !== 'ADMIN') {
+        return this.approvals.createRequest({
+          actionType: 'CANCEL_OCCURRENCE',
+          entityType: 'TemplateOccurrence',
+          entityId: `${stop.id}:${date}`,
+          payload: {
+            templateId,
+            stopId: stop.id,
+            date,
+            reason,
+            siteName: template.site.name,
+            startTime: stop.startTime,
+            endTime: stop.endTime,
+          },
+          requestedById: actor.id,
+          summary: `${template.site.name} le ${date} ${stop.startTime}-${stop.endTime} : ${reason}`,
+        });
+      }
+    } else {
+      const agentIds = Array.from(new Set(dto.agentIds ?? []));
+      if (!agentIds.length) throw new BadRequestException('Choisissez au moins un agent');
+      for (const agentId of agentIds) {
+        const agent = this.usersService.findOne(agentId);
+        if (!agent || agent.role !== 'AGENT' || agent.active === false) {
+          throw new BadRequestException('Agent introuvable ou inactif');
+        }
+      }
+      // Missions déjà créées et absences validées…
+      await this.checkAssignmentConflicts(agentIds, date, stop.startTime, stop.endTime, real?.id);
+      // …et créneaux prévus ailleurs ce jour-là, pas encore créés.
+      const planned = await this.getPlanning({ startDate: date, endDate: date });
+      const clash = planned.find(
+        (o) =>
+          o.source === 'projected' &&
+          o.stopId !== stop.id &&
+          o.agentIds.some((id) => agentIds.includes(id)) &&
+          o.startTime < stop.endTime &&
+          stop.startTime < o.endTime,
+      );
+      if (clash) {
+        const who = clash.agents.find((a) => agentIds.includes(a.id))?.name ?? 'Un agent';
+        throw new BadRequestException(`${who} est déjà prévu sur « ${clash.siteName} » de ${clash.startTime} à ${clash.endTime} ce jour-là.`);
+      }
+      dto.agentIds = agentIds;
+    }
+
+    const exception = await this.prisma.templateException.upsert({
+      where: { stopId_date: { stopId: stop.id, date: day } },
+      create: {
+        templateId,
+        stopId: stop.id,
+        date: day,
+        kind: dto.kind,
+        agentIds: dto.kind === 'REPLACE_AGENTS' ? dto.agentIds! : [],
+        reason: dto.reason?.trim() || null,
+        createdById: actor.id,
+      },
+      update: {
+        kind: dto.kind,
+        agentIds: dto.kind === 'REPLACE_AGENTS' ? dto.agentIds! : [],
+        reason: dto.reason?.trim() || null,
+        createdById: actor.id,
+      },
+    });
+    const label = dto.kind === 'CANCEL' ? 'annulé' : `confié à ${dto.agentIds!.map((id) => this.usersService.findOne(id)?.name).join(', ')}`;
+    this.auditService.record({
+      actorId: actor.id,
+      action: 'CREATE_TEMPLATE_EXCEPTION',
+      entityType: 'TemplateException',
+      entityId: exception.id,
+      details: `${template.site.name} le ${date} ${stop.startTime}-${stop.endTime} : ${label}`,
+    });
+
+    const previousAgents = real ? real.assignments.map((a) => a.userId) : stop.agentIds;
+    if (real) {
+      if (dto.kind === 'CANCEL') {
+        await this.cancel(real.id, dto.reason!.trim(), actor.id);
+      } else {
+        await this.reassignFromTemplate(real.id, dto.agentIds!, actor.id);
+      }
+    }
+    await this.notifyExceptionAgents(template.site.name, date, stop, dto.kind, previousAgents, dto.agentIds ?? []);
+    return { ...exception, date };
+  }
+
+  private async notifyExceptionAgents(
+    siteName: string,
+    date: string,
+    stop: { startTime: string; endTime: string },
+    kind: 'CANCEL' | 'REPLACE_AGENTS',
+    before: string[],
+    after: string[],
+  ) {
+    const when = `${new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(this.toDateOnly(date))} de ${stop.startTime} à ${stop.endTime}`;
+    const removed = kind === 'CANCEL' ? before : before.filter((id) => !after.includes(id));
+    const added = kind === 'CANCEL' ? [] : after.filter((id) => !before.includes(id));
+    const send = (targetId: string, title: string, message: string) =>
+      this.notifications
+        .send({ audience: 'AGENT', targetId, title, message, category: 'planning' } as any)
+        .catch((err) => this.logger.warn(`Notification d'exception échouée: ${(err as Error).message}`));
+    for (const id of removed) {
+      await send(id, kind === 'CANCEL' ? 'Mission annulée' : 'Mission retirée', `${siteName}, ${when} : ${kind === 'CANCEL' ? 'la mission est annulée ce jour-là' : "vous n'êtes plus prévu ce jour-là"}.`);
+    }
+    for (const id of added) {
+      await send(id, 'Remplacement', `Vous êtes prévu sur ${siteName}, ${when}.`);
+    }
+  }
+
+  /** Retire une exception tant que la mission du jour n'a pas encore été créée. */
+  async deleteTemplateException(templateId: string, exceptionId: string, actorId: string) {
+    const exception = await this.prisma.templateException.findUnique({ where: { id: exceptionId } });
+    if (!exception || exception.templateId !== templateId) throw new NotFoundException('Exception introuvable');
+    const real = await this.prisma.intervention.findFirst({
+      where: { generatedFromStopId: exception.stopId, date: exception.date },
+      select: { id: true },
+    });
+    if (real) {
+      throw new BadRequestException("La mission de ce jour est déjà créée : l'exception ne peut plus être retirée.");
+    }
+    await this.prisma.templateException.delete({ where: { id: exceptionId } });
+    this.auditService.record({
+      actorId,
+      action: 'DELETE_TEMPLATE_EXCEPTION',
+      entityType: 'TemplateException',
+      entityId: exceptionId,
+      details: `Retour au gabarit le ${exception.date.toISOString().slice(0, 10)}`,
+    });
+    return { ok: true };
+  }
+
+  /** Change les agents d'une mission déjà créée pour suivre une exception du gabarit. */
+  private async reassignFromTemplate(id: string, agentIds: string[], actorId: string) {
+    const record = await this.prisma.intervention.findUnique({ where: { id } });
+    if (!record) throw new NotFoundException('Intervention introuvable');
+    const dateStr = record.date.toISOString().slice(0, 10);
+    await this.prisma.$transaction([
+      this.prisma.interventionAssignment.deleteMany({ where: { interventionId: id, userId: { notIn: agentIds } } }),
+      this.prisma.attendance.deleteMany({ where: { interventionId: id, userId: { notIn: agentIds } } }),
+      this.prisma.interventionAssignment.createMany({
+        data: agentIds.map((userId) => ({ interventionId: id, userId })),
+        skipDuplicates: true,
+      }),
+    ]);
+    const withAttendance = new Set(
+      (await this.prisma.attendance.findMany({ where: { interventionId: id }, select: { userId: true } })).map((a) => a.userId),
+    );
+    const missing = agentIds.filter((userId) => !withAttendance.has(userId));
+    if (missing.length) {
+      await this.prisma.attendance.createMany({
+        data: missing.map((userId) => ({
+          userId,
+          interventionId: id,
+          date: record.date,
+          plannedStart: this.combine(dateStr, record.startTime),
+          plannedEnd: this.combine(dateStr, record.endTime),
+          status: 'PENDING' as const,
+          manual: false,
+          createdBy: 'SYSTEM',
+        })),
+      });
+    }
+    const refreshed = await this.prisma.intervention.findUniqueOrThrow({
+      where: { id },
+      include: { assignments: true, trucks: true, attendances: true },
+    });
+    const view = this.present(this.toEntity(refreshed), refreshed.attendances);
+    this.auditService.record({
+      actorId,
+      action: 'UPDATE_INTERVENTION',
+      entityType: 'intervention',
+      entityId: id,
+      details: 'agents (exception du gabarit)',
+    });
+    this.realtime.broadcast('intervention.updated', {
+      id: view.id,
+      siteId: view.siteId,
+      date: view.date,
+      startTime: view.startTime,
+      endTime: view.endTime,
+      type: view.type,
+      status: view.status,
+    });
+    return view;
+  }
+
+  /**
+   * Aperçu, avant enregistrement, de l'effet d'un gabarit proposé sur les 14 prochains jours :
+   * missions ajoutées, retirées ou modifiées par rapport à la version en place, et alertes (conflit,
+   * absence validée, plus de 10 h dans la journée ou de 48 h dans la semaine pour un agent).
+   */
+  async previewTemplateImpact(templateId: string | null, dto: UpdateTemplateDto & { siteId?: string }, days = 14) {
+    const existing = templateId
+      ? await this.prisma.interventionTemplate.findUnique({
+          where: { id: templateId },
+          include: { stops: true, site: { select: { id: true, name: true } } },
+        })
+      : null;
+    if (templateId && !existing) throw new NotFoundException('Gabarit introuvable');
+    const siteId = dto.siteId ?? existing?.siteId;
+    if (!siteId) throw new BadRequestException('Site manquant');
+    const site = existing?.site ?? (await this.prisma.site.findUnique({ where: { id: siteId }, select: { id: true, name: true } }));
+    if (!site) throw new NotFoundException('Site introuvable');
+
+    const start = this.toDateOnly(this.todayParis());
+    const end = new Date(start.getTime() + (days - 1) * 24 * 60 * 60 * 1000);
+    const proposedStart = dto.startDate ? new Date(dto.startDate) : existing?.startDate ?? new Date();
+    const proposedEnd = dto.endDate !== undefined ? (dto.endDate ? new Date(dto.endDate) : null) : existing?.endDate ?? null;
+    const proposedStops = this.stopsForCheck(dto, existing?.stops ?? []);
+    const exceptions = existing ? (await this.loadExceptions([existing.id], start, end)).get(existing.id) ?? [] : [];
+
+    const current =
+      existing && existing.validatedAt && existing.active
+        ? applyTemplateExceptions(
+            computeTemplateOccurrences(
+              { siteId, startDate: existing.startDate, endDate: existing.endDate },
+              existing.stops.map((s) => this.toStopLike(s)),
+              start,
+              end,
+            ),
+            exceptions,
+          )
+        : [];
+    const proposed =
+      dto.active === false
+        ? []
+        : applyTemplateExceptions(
+            computeTemplateOccurrences({ siteId, startDate: proposedStart, endDate: proposedEnd }, proposedStops, start, end),
+            exceptions,
+          );
+
+    const categoryIds = [...new Set([...current, ...proposed].map((o) => o.categoryId).filter((id): id is string => !!id))];
+    const categories = categoryIds.length
+      ? await this.prisma.interventionCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, label: true } })
+      : [];
+    const categoryLabel = new Map(categories.map((c) => [c.id, c.label]));
+    const agentName = (id: string) => this.usersService.findOne(id)?.name ?? 'Agent inconnu';
+    const describe = (o: { date: string; startTime: string; endTime: string; agentIds: string[]; categoryId?: string | null }) => ({
+      date: o.date,
+      startTime: o.startTime,
+      endTime: o.endTime,
+      categoryLabel: o.categoryId ? categoryLabel.get(o.categoryId) ?? null : null,
+      agents: o.agentIds.map(agentName),
+    });
+
+    const currentByKey = new Map(current.map((o) => [`${o.date}:${o.stopId}`, o]));
+    const added: ReturnType<typeof describe>[] = [];
+    const changed: { before: ReturnType<typeof describe>; after: ReturnType<typeof describe> }[] = [];
+    const seen = new Set<string>();
+    for (const o of proposed) {
+      const key = `${o.date}:${o.stopId}`;
+      const before = currentByKey.get(key);
+      if (!before) {
+        added.push(describe(o));
+        continue;
+      }
+      seen.add(key);
+      const sameAgents = before.agentIds.length === o.agentIds.length && before.agentIds.every((id) => o.agentIds.includes(id));
+      if (before.startTime !== o.startTime || before.endTime !== o.endTime || !sameAgents || before.categoryId !== o.categoryId) {
+        changed.push({ before: describe(before), after: describe(o) });
+      }
+    }
+    const removed = current.filter((o) => !seen.has(`${o.date}:${o.stopId}`)).map(describe);
+
+    const warnings: string[] = [];
+    try {
+      await this.assertNoConflicts(existing?.id ?? null, site, proposedStart, proposedEnd, proposedStops);
+    } catch (err) {
+      warnings.push((err as Error).message);
+    }
+    const agentIds = [...new Set(proposed.flatMap((o) => o.agentIds))];
+    if (agentIds.length) {
+      const absences = await this.prisma.absence.findMany({
+        where: { userId: { in: agentIds }, status: 'APPROVED', from: { lte: end }, to: { gte: start } },
+        select: { userId: true, from: true, to: true },
+      });
+      for (const abs of absences) {
+        const hit = proposed.find(
+          (o) =>
+            o.agentIds.includes(abs.userId) &&
+            o.date >= abs.from.toISOString().slice(0, 10) &&
+            o.date <= abs.to.toISOString().slice(0, 10),
+        );
+        if (hit) warnings.push(`${agentName(abs.userId)} est en absence validée le ${hit.date} : prévoir un remplaçant ce jour-là.`);
+      }
+      // Charge de travail : ce gabarit + les autres gabarits validés, sur les mêmes jours.
+      const planning = await this.getPlanning({ startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) });
+      const others = planning.filter((o) => o.siteId !== siteId);
+      const minutes = (o: { startTime: string; endTime: string }) => {
+        const [sh, sm] = o.startTime.split(':').map(Number);
+        const [eh, em] = o.endTime.split(':').map(Number);
+        return Math.max(0, eh * 60 + em - (sh * 60 + sm));
+      };
+      const weekOf = (date: string) => {
+        const d = this.toDateOnly(date);
+        d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+        return d.toISOString().slice(0, 10);
+      };
+      for (const agentId of agentIds) {
+        const mine = [...proposed, ...others].filter((o) => o.agentIds.includes(agentId));
+        const perDay = new Map<string, number>();
+        const perWeek = new Map<string, number>();
+        for (const o of mine) {
+          perDay.set(o.date, (perDay.get(o.date) ?? 0) + minutes(o));
+          perWeek.set(weekOf(o.date), (perWeek.get(weekOf(o.date)) ?? 0) + minutes(o));
+        }
+        const longDay = [...perDay.entries()].find(([, m]) => m > 10 * 60);
+        if (longDay) warnings.push(`${agentName(agentId)} serait prévu ${Math.round(longDay[1] / 6) / 10} h le ${longDay[0]} (plus de 10 h dans la journée).`);
+        const longWeek = [...perWeek.entries()].find(([, m]) => m > 48 * 60);
+        if (longWeek) warnings.push(`${agentName(agentId)} serait prévu ${Math.round(longWeek[1] / 6) / 10} h la semaine du ${longWeek[0]} (plus de 48 h).`);
+      }
+    }
+    return {
+      period: { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) },
+      requiresValidation: false,
+      added,
+      removed,
+      changed,
+      warnings,
+    };
   }
 
   async toggleTemplate(id: string, active: boolean) {
@@ -1505,11 +2102,15 @@ export class InterventionsService implements OnModuleInit {
       throw new NotFoundException('Gabarit introuvable');
     }
     const stops = template.stops.map((s) => this.toStopLike(s));
-    const occurrences = computeTemplateOccurrences(
-      { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
-      stops,
-      this.toDateOnly(startDate),
-      this.toDateOnly(endDate),
+    const exceptions = await this.loadExceptions([template.id], this.toDateOnly(startDate), this.toDateOnly(endDate));
+    const occurrences = applyTemplateExceptions(
+      computeTemplateOccurrences(
+        { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
+        stops,
+        this.toDateOnly(startDate),
+        this.toDateOnly(endDate),
+      ),
+      exceptions.get(template.id) ?? [],
     );
     const siteIds = Array.from(new Set(occurrences.map((o) => o.siteId)));
     const sites = siteIds.length
@@ -1559,14 +2160,19 @@ export class InterventionsService implements OnModuleInit {
       startTime: string;
       endTime: string;
       agentIds: string[];
+      exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] };
     }> = [];
+    const exceptionsByTemplate = await this.loadExceptions(templates.map((t) => t.id), horizonStart, horizonEnd);
     for (const template of templates) {
       const stops = template.stops.map((s) => this.toStopLike(s));
-      const occurrences = computeTemplateOccurrences(
-        { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
-        stops,
-        horizonStart,
-        horizonEnd,
+      const occurrences = applyTemplateExceptions(
+        computeTemplateOccurrences(
+          { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
+          stops,
+          horizonStart,
+          horizonEnd,
+        ),
+        exceptionsByTemplate.get(template.id) ?? [],
       );
       for (const occ of occurrences) {
         if (params.agentId && !occ.agentIds.includes(params.agentId)) continue;
@@ -1699,13 +2305,17 @@ export class InterventionsService implements OnModuleInit {
         include: { stops: true },
       });
 
+      const exceptionsByTemplate = await this.loadExceptions(templates.map((t) => t.id), todayStart, horizonEnd);
       for (const template of templates) {
         const stops = template.stops.map((s) => this.toStopLike(s));
-        const occurrences = computeTemplateOccurrences(
-          { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
-          stops,
-          todayStart,
-          horizonEnd,
+        const occurrences = applyTemplateExceptions(
+          computeTemplateOccurrences(
+            { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
+            stops,
+            todayStart,
+            horizonEnd,
+          ),
+          exceptionsByTemplate.get(template.id) ?? [],
         );
         if (!occurrences.length) continue;
 

@@ -9,6 +9,9 @@ import {
   InterventionTemplate,
   PlanningEntry,
   TemplateAgentSuggestion,
+  TemplateImpact,
+  TemplateRevision,
+  TemplateException,
 } from '../../types/intervention';
 import { ApprovalRequest, isApprovalRequest } from '../../types/approval';
 import { SiteRoster } from '../../types/category';
@@ -253,5 +256,55 @@ export async function setClientSignature(token: string, interventionId: string, 
     path: `interventions/${interventionId}/signature`,
     token,
     options: { method: 'POST', body: JSON.stringify({ signature }) },
+  });
+}
+
+/** Missions ajoutées, retirées ou modifiées sur 14 jours, avant d'enregistrer le gabarit. */
+export async function previewTemplateImpact(token: string, id: string | null, payload: UpdateTemplatePayload) {
+  return apiFetch<TemplateImpact>({
+    path: id ? `interventions/templates/${id}/impact` : 'interventions/templates/impact',
+    token,
+    options: { method: 'POST', body: JSON.stringify(payload) },
+  });
+}
+
+export async function listTemplateRevisions(token: string, id: string) {
+  return apiFetch<TemplateRevision[]>({ path: `interventions/templates/${id}/revisions`, token });
+}
+
+export async function restoreTemplateRevision(token: string, id: string, revisionId: string) {
+  return apiFetch<InterventionTemplate>({
+    path: `interventions/templates/${id}/revisions/${revisionId}/restore`,
+    token,
+    options: { method: 'POST' },
+  });
+}
+
+export async function listTemplateExceptions(token: string, id: string) {
+  return apiFetch<TemplateException[]>({ path: `interventions/templates/${id}/exceptions`, token });
+}
+
+export type TemplateExceptionPayload = {
+  stopId: string;
+  date: string;
+  kind: 'CANCEL' | 'REPLACE_AGENTS';
+  agentIds?: string[];
+  reason?: string;
+};
+
+/** Remplacement d'un jour (direct) ou annulation d'un jour (demande à l'administrateur pour un superviseur). */
+export async function createTemplateException(token: string, id: string, payload: TemplateExceptionPayload) {
+  return apiFetch<TemplateException | ApprovalRequest>({
+    path: `interventions/templates/${id}/exceptions`,
+    token,
+    options: { method: 'POST', body: JSON.stringify(payload) },
+  });
+}
+
+export async function deleteTemplateException(token: string, id: string, exceptionId: string) {
+  return apiFetch<{ ok: boolean }>({
+    path: `interventions/templates/${id}/exceptions/${exceptionId}`,
+    token,
+    options: { method: 'DELETE' },
   });
 }

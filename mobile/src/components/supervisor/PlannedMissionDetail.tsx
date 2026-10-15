@@ -7,6 +7,7 @@ import { PlanningOccurrence } from '@/types/supervision';
 import { ActionButton, DetailSection, detailStyles as styles, InfoLine } from './DetailBlocks';
 import { formatDayLong } from './format';
 import { TemplateEditorSheet } from './TemplateEditorSheet';
+import { DayChangeSheet } from './DayChangeSheet';
 
 type Props = {
   occurrence: PlanningOccurrence;
@@ -19,6 +20,16 @@ type Props = {
  */
 export const PlannedMissionDetail: React.FC<Props> = ({ occurrence, onChanged }) => {
   const [editing, setEditing] = useState(false);
+  const [dayChange, setDayChange] = useState<'replace' | 'cancel' | null>(null);
+  const dayOccurrence = {
+    templateId: occurrence.templateId,
+    stopId: occurrence.stopId,
+    date: occurrence.date,
+    siteName: occurrence.siteName,
+    startTime: occurrence.startTime,
+    endTime: occurrence.endTime,
+    agentIds: occurrence.agentIds,
+  };
   return (
     <View style={styles.card}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -48,6 +59,15 @@ export const PlannedMissionDetail: React.FC<Props> = ({ occurrence, onChanged })
           </Text>
         </View>
 
+        {occurrence.exception ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, backgroundColor: theme.colors.status.lateSoft }}>
+            <Ionicons name="swap-horizontal-outline" size={20} color={theme.colors.ink} />
+            <Text style={[styles.text, { flex: 1 }]}>
+              Remplacement prévu ce jour-là seulement{occurrence.exception.reason ? ` (${occurrence.exception.reason})` : ''}.
+            </Text>
+          </View>
+        ) : null}
+
         <DetailSection title="Prévu">
           <InfoLine icon="clipboard-outline" label="Prestation" value={occurrence.categoryLabel ?? 'Autre (sans prestation du site)'} />
           <InfoLine
@@ -58,7 +78,9 @@ export const PlannedMissionDetail: React.FC<Props> = ({ occurrence, onChanged })
         </DetailSection>
 
         <View style={styles.actions}>
-          <ActionButton primary label="Modifier le gabarit" icon="git-branch-outline" onPress={() => setEditing(true)} />
+          <ActionButton primary label="Remplacer ce jour-là" icon="swap-horizontal-outline" onPress={() => setDayChange('replace')} />
+          <ActionButton label="Annuler ce jour-là" icon="close-circle-outline" onPress={() => setDayChange('cancel')} />
+          <ActionButton label="Modifier le gabarit" icon="git-branch-outline" onPress={() => setEditing(true)} />
         </View>
       </ScrollView>
       <TemplateEditorSheet
@@ -67,6 +89,12 @@ export const PlannedMissionDetail: React.FC<Props> = ({ occurrence, onChanged })
         focusStopId={occurrence.stopId}
         onClose={() => setEditing(false)}
         onSaved={onChanged}
+      />
+      <DayChangeSheet
+        occurrence={dayChange ? dayOccurrence : null}
+        mode={dayChange ?? 'replace'}
+        onClose={() => setDayChange(null)}
+        onDone={onChanged}
       />
     </View>
   );

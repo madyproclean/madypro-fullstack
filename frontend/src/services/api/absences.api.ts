@@ -91,7 +91,10 @@ export async function updateAbsenceStatus(token: string, id: string, payload: Up
 export type ReplacementSuggestion = {
   absenceId: string;
   interventions: {
-    interventionId: string;
+    interventionId: string | null;
+    templateId: string;
+    stopId: string;
+    agentIds: string[];
     siteId: string;
     siteName: string;
     date: string;

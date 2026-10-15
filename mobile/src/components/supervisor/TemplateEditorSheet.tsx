@@ -9,9 +9,10 @@ import {
   listSitePrestations,
   listSiteTemplates,
   listSupervisedSites,
+  previewSiteTemplateImpact,
   saveSiteTemplate,
 } from '@/services/api/supervision.api';
-import { AgentOption, SitePrestation, SiteTemplate, SupervisedSite, TemplateStop } from '@/types/supervision';
+import { AgentOption, SitePrestation, SiteTemplate, SupervisedSite, TemplateImpact, TemplateStop } from '@/types/supervision';
 import { FormSheet } from './FormSheet';
 import { DateTimeField } from './DateTimeField';
 import { AgentPicker } from './AgentPicker';
@@ -58,7 +59,7 @@ const comparable = (stops: TemplateStop[]) =>
 /**
  * Gabarit d'un site : toutes ses missions en découlent. Créer, déplacer une mission ou changer ses
  * agents habituels = modifier un créneau ici. Pour un superviseur, l'enregistrement est soumis à
- * l'administrateur ; le gabarit ne crée plus de mission tant qu'il n'est pas revalidé.
+ * l'administrateur ; en attendant, la version validée continue de créer les missions.
  */
 export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialSiteId, focusStopId, onClose, onSaved }) => {
   const { token } = useAuthContext();
@@ -73,6 +74,10 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Envoi en deux temps : d'abord l'effet sur les 2 prochaines semaines, puis l'envoi.
+  const [impact, setImpact] = useState<TemplateImpact | null>(null);
+
+  useEffect(() => setImpact(null), [stops, siteId, visible]);
 
   // À l'ouverture : sites et agents du superviseur.
   useEffect(() => {
@@ -97,7 +102,9 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
       .then(([templates, nextPrestations]) => {
         if (cancelled) return;
         const current = templates.find((t) => t.siteId === siteId) ?? null;
-        const nextStops = (current?.stops ?? []).map((s) => ({ ...s, intervalWeeks: s.intervalWeeks ?? 1 }));
+        // Une modification déjà envoyée : on repart d'elle.
+        const source = current?.pendingVersion?.stops ?? current?.stops ?? [];
+        const nextStops = source.map((s) => ({ ...s, intervalWeeks: s.intervalWeeks ?? 1 }));
         setTemplate(current);
         setPrestations(nextPrestations.filter((p) => p.active));
         setStops(nextStops);
@@ -154,13 +161,20 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
     if (!token || !siteId || validation) return;
     setSubmitting(true);
     setError(null);
+    const input = { label: template?.label ?? `Gabarit ${site?.name ?? ''}`.trim(), siteId, stops };
     try {
-      await saveSiteTemplate(token, template?.id ?? null, {
-        label: template?.label ?? `Gabarit ${site?.name ?? ''}`.trim(),
-        siteId,
-        stops,
-      });
-      showToast('Gabarit envoyé', "L'administrateur doit le valider pour que les missions suivent ce changement.", 'success');
+      if (!impact) {
+        setImpact(await previewSiteTemplateImpact(token, template?.id ?? null, input));
+        return;
+      }
+      await saveSiteTemplate(token, template?.id ?? null, input);
+      showToast(
+        'Gabarit envoyé',
+        template?.validatedAt
+          ? "L'administrateur doit valider le changement ; d'ici là, le gabarit actuel continue de s'appliquer."
+          : "L'administrateur doit le valider pour que les missions soient créées.",
+        'success',
+      );
       onSaved?.();
       onClose();
     } catch (err) {
@@ -174,10 +188,10 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
     <FormSheet
       visible={visible}
       title={site ? `Gabarit · ${site.name}` : 'Gabarit d’un site'}
-      hint="Toutes les missions du site sont créées à partir de ce gabarit. Votre modification sera soumise à l'administrateur ; en attendant sa validation, aucune nouvelle mission n'est créée sur ce site."
+      hint="Toutes les missions du site sont créées à partir de ce gabarit. Votre modification sera soumise à l'administrateur ; en attendant sa validation, la version actuelle continue de s'appliquer. Pour un seul jour (absence, fermeture), utilisez plutôt « Remplacer ce jour-là » depuis la mission."
       onClose={onClose}
       onSubmit={submit}
-      submitLabel="Envoyer pour validation"
+      submitLabel={impact ? 'Envoyer pour validation' : 'Voir l’effet sur le planning'}
       submitting={submitting}
       canSubmit={!validation}
       error={error ?? (changed && validation !== 'Aucune modification.' ? validation : null)}
@@ -206,9 +220,11 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
             <Text style={styles.statusText}>
               {!template
                 ? "Ce site n'a pas encore de gabarit : aucune mission n'y est prévue."
-                : template.validatedAt
-                  ? 'Gabarit validé : les missions du site en découlent.'
-                  : "Gabarit en attente de validation par l'administrateur : aucune mission n'est créée d'ici là."}
+                : template.pendingVersion
+                  ? "Une modification attend l'administrateur (affichée ci-dessous) : en attendant, la version validée continue de s'appliquer."
+                  : template.validatedAt
+                    ? 'Gabarit validé : les missions du site en découlent.'
+                    : "Gabarit en attente de validation par l'administrateur : aucune mission n'est créée d'ici là."}
             </Text>
           </View>
 
@@ -294,6 +310,8 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
             </View>
           ))}
 
+          {impact ? <ImpactBlock impact={impact} /> : null}
+
           <Pressable
             accessibilityRole="button"
             onPress={addStop}
@@ -305,6 +323,44 @@ export const TemplateEditorSheet: React.FC<Props> = ({ visible, siteId: initialS
         </>
       ) : null}
     </FormSheet>
+  );
+};
+
+const ImpactBlock: React.FC<{ impact: TemplateImpact }> = ({ impact }) => {
+  const line = (i: TemplateImpact['added'][number]) =>
+    `${formatDayShort(i.date)} · ${i.startTime}–${i.endTime} · ${i.agents.join(', ') || 'aucun agent'}`;
+  const groups: Array<[string, string, string[]]> = [
+    ['Missions ajoutées', theme.colors.status.onTime, impact.added.map(line)],
+    ['Missions retirées', theme.colors.status.absent, impact.removed.map(line)],
+    ['Missions modifiées', theme.colors.status.late, impact.changed.map((c) => `${line(c.before)} → ${c.after.startTime}–${c.after.endTime} · ${c.after.agents.join(', ') || 'aucun agent'}`)],
+  ];
+  const nothing = groups.every(([, , items]) => !items.length);
+  return (
+    <View style={styles.impact} accessibilityLabel="Effet sur le planning">
+      <Text style={styles.stopTitle}>Effet sur les 2 prochaines semaines</Text>
+      {impact.warnings.map((w) => (
+        <View key={w} style={{ flexDirection: 'row', gap: 8 }}>
+          <Ionicons name="warning-outline" size={18} color={theme.colors.status.absent} />
+          <Text style={[styles.muted, { flex: 1, color: theme.colors.ink }]}>{w}</Text>
+        </View>
+      ))}
+      {nothing ? <Text style={styles.muted}>Aucune mission ne change sur cette période.</Text> : null}
+      {groups.map(([title, color, items]) =>
+        items.length ? (
+          <View key={title} style={{ gap: 4 }}>
+            <Text style={[styles.label, { color, fontFamily: theme.fonts.bodySemiBold }]}>
+              {title} ({items.length})
+            </Text>
+            {items.slice(0, 8).map((text) => (
+              <Text key={text} style={styles.muted}>
+                • {text}
+              </Text>
+            ))}
+            {items.length > 8 ? <Text style={styles.muted}>… et {items.length - 8} autre(s)</Text> : null}
+          </View>
+        ) : null,
+      )}
+    </View>
   );
 };
 
@@ -372,4 +428,5 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primaryDark,
   },
   addText: { fontFamily: theme.fonts.bodySemiBold, fontSize: 16, color: theme.colors.primaryDark },
+  impact: { gap: 10, padding: 16, borderRadius: 16, borderWidth: 2, borderColor: theme.colors.primary, backgroundColor: theme.colors.shell },
 });

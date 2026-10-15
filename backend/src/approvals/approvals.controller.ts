@@ -64,13 +64,18 @@ export class ApprovalsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Post(':id/reject')
-  reject(@Param('id') id: string, @Body() dto: RejectApprovalDto, @Req() req: Request) {
+  async reject(@Param('id') id: string, @Body() dto: RejectApprovalDto, @Req() req: Request) {
     const user = req.user as any;
+    const request = await this.approvals.findPending(id);
+    if (request.actionType === 'VALIDATE_TEMPLATE' && request.entityId) {
+      // Proposition refusée : la version en place du gabarit reste active.
+      await this.interventionsService.discardPendingTemplate(request.entityId);
+    }
     return this.approvals.markRejected(id, user.sub, dto.comment);
   }
 
   private async applyRequest(
-    request: { actionType: string; entityId: string | null; payload: unknown },
+    request: { actionType: string; entityId: string | null; payload: unknown; requestedById: string | null },
     reviewerId: string,
   ) {
     const payload = request.payload as any;
@@ -88,7 +93,13 @@ export class ApprovalsController {
         return this.interventionsService.createTemplateBatch(payload, reviewerId);
       case 'VALIDATE_TEMPLATE':
         if (!request.entityId) throw new Error('Gabarit manquant');
-        return this.interventionsService.validateTemplate(request.entityId, reviewerId);
+        return this.interventionsService.validateTemplate(request.entityId, reviewerId, request.requestedById);
+      case 'CANCEL_OCCURRENCE':
+        return this.interventionsService.createTemplateException(
+          payload.templateId,
+          { stopId: payload.stopId, date: payload.date, kind: 'CANCEL', reason: payload.reason },
+          { id: reviewerId, role: 'ADMIN' },
+        );
       default:
         throw new Error('Type d’action non pris en charge');
     }

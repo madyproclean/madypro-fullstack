@@ -90,7 +90,10 @@ export type TeamAbsence = {
 export type ReplacementSuggestions = {
   absenceId: string;
   interventions: Array<{
-    interventionId: string;
+    interventionId: string | null;
+    templateId: string;
+    stopId: string;
+    agentIds: string[];
     siteId: string;
     siteName: string;
     date: string;
@@ -107,7 +110,8 @@ export type ApprovalActionType =
   | 'UNASSIGN_AGENT'
   | 'CANCEL_INTERVENTION'
   | 'CREATE_TEMPLATE_BATCH'
-  | 'VALIDATE_TEMPLATE';
+  | 'VALIDATE_TEMPLATE'
+  | 'CANCEL_OCCURRENCE';
 
 export type ApprovalRequest = {
   id: string;
@@ -226,6 +230,30 @@ export type PlanningOccurrence = {
   source: 'real' | 'projected';
   interventionId?: string;
   status?: string;
+  /** Agents remplacés ce jour-là seulement (le gabarit, lui, ne change pas). */
+  exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] };
+};
+
+/** Effet d'un gabarit modifié sur les 2 prochaines semaines. */
+export type TemplateImpactItem = { date: string; startTime: string; endTime: string; categoryLabel: string | null; agents: string[] };
+export type TemplateImpact = {
+  period: { startDate: string; endDate: string };
+  requiresValidation: boolean;
+  added: TemplateImpactItem[];
+  removed: TemplateImpactItem[];
+  changed: Array<{ before: TemplateImpactItem; after: TemplateImpactItem }>;
+  warnings: string[];
+};
+
+/** Créneau d'un jour donné, cible d'un changement ponctuel (remplacement ou annulation). */
+export type DayOccurrence = {
+  templateId: string;
+  stopId: string;
+  date: string;
+  siteName: string;
+  startTime: string;
+  endTime: string;
+  agentIds: string[];
 };
 
 /** Créneau d'un gabarit : jours (0 = dimanche), horaires, prestation et agents habituels. */
@@ -251,6 +279,9 @@ export type SiteTemplate = {
   active: boolean;
   validatedAt: string | null;
   stops: TemplateStop[];
+  /** Modification envoyée, en attente de l'administrateur : la version actuelle reste active. */
+  pendingVersion?: { label?: string; stops?: TemplateStop[] } | null;
+  pendingRequestedByName?: string | null;
 };
 
 /** Prestation prévue sur un site (catégorie + horaires habituels + checklist). */

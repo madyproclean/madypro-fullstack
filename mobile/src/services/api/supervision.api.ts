@@ -12,6 +12,8 @@ import {
   SitePrestation,
   SiteTemplate,
   TemplateStop,
+  TemplateImpact,
+  DayOccurrence,
   SiteQrCode,
   SupervisedSite,
   TeamAgent,
@@ -175,14 +177,8 @@ export function listSitePrestations(token: string, siteId: string) {
 
 type TemplateInput = { label: string; siteId: string; stops: TemplateStop[] };
 
-/**
- * Enregistre le gabarit d'un site (création ou remplacement de ses créneaux). Pour un
- * superviseur, le gabarit repasse « à valider » : l'administrateur doit l'approuver.
- */
-export function saveSiteTemplate(token: string, templateId: string | null, input: TemplateInput) {
-  // La liste envoyée remplace celle du serveur : un créneau « date précise » (créé sur le web)
-  // doit être renvoyé tel quel pour ne pas être supprimé.
-  const stops = input.stops.map(({ id, daysOfWeek, intervalWeeks, specificDate, categoryId, startTime, endTime, agentIds }, order) => ({
+const stopsPayload = (stops: TemplateStop[]) =>
+  stops.map(({ id, daysOfWeek, intervalWeeks, specificDate, categoryId, startTime, endTime, agentIds }, order) => ({
     ...(id ? { id } : {}),
     ...(specificDate ? { specificDate: specificDate.slice(0, 10) } : { daysOfWeek }),
     intervalWeeks,
@@ -192,6 +188,40 @@ export function saveSiteTemplate(token: string, templateId: string | null, input
     agentIds,
     order,
   }));
+
+/** Missions ajoutées, retirées ou modifiées sur 2 semaines, avant d'envoyer le gabarit. */
+export function previewSiteTemplateImpact(token: string, templateId: string | null, input: TemplateInput) {
+  return apiFetch<TemplateImpact>({
+    path: templateId ? `/interventions/templates/${templateId}/impact` : '/interventions/templates/impact',
+    token,
+    options: { method: 'POST', body: JSON.stringify({ ...input, stops: stopsPayload(input.stops) }) },
+  });
+}
+
+/**
+ * Changement d'un seul jour sur un créneau du gabarit : remplacement d'agents (immédiat) ou
+ * annulation (demande envoyée à l'administrateur).
+ */
+export function changeOneDay(
+  token: string,
+  occurrence: Pick<DayOccurrence, 'templateId' | 'stopId' | 'date'>,
+  change: { kind: 'REPLACE_AGENTS'; agentIds: string[]; reason?: string } | { kind: 'CANCEL'; reason: string },
+) {
+  return apiFetch<{ id: string; actionType?: string }>({
+    path: `/interventions/templates/${encodeURIComponent(occurrence.templateId)}/exceptions`,
+    token,
+    options: { method: 'POST', body: JSON.stringify({ stopId: occurrence.stopId, date: occurrence.date, ...change }) },
+  });
+}
+
+/**
+ * Enregistre le gabarit d'un site (création ou remplacement de ses créneaux). Pour un
+ * superviseur, le gabarit repasse « à valider » : l'administrateur doit l'approuver.
+ */
+export function saveSiteTemplate(token: string, templateId: string | null, input: TemplateInput) {
+  // La liste envoyée remplace celle du serveur : un créneau « date précise » (créé sur le web)
+  // doit être renvoyé tel quel pour ne pas être supprimé.
+  const stops = stopsPayload(input.stops);
   return apiFetch<SiteTemplate>({
     path: templateId ? `/interventions/templates/${templateId}` : '/interventions/templates',
     token,

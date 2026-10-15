@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AbsenceEntity, AbsenceStatus, AbsenceType } from './entities/absence.entity';
 import { UsersService } from '../users/users.service';
@@ -7,6 +7,7 @@ import { CreateAbsenceRequestDto } from './dto/create-absence-request.dto';
 import { CreateManualAbsenceDto } from './dto/create-manual-absence.dto';
 import { UpdateAbsenceStatusDto } from './dto/update-absence-status.dto';
 import { AuditService } from '../audit/audit.service';
+import { InterventionsService } from '../interventions/interventions.service';
 import { PrismaService } from '../database/prisma.service';
 import { BadRequestException } from '@nestjs/common';
 import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
@@ -57,6 +58,7 @@ export class AbsencesService {
     private readonly auditService: AuditService,
     private readonly notifications: NotificationsService,
     private readonly scope: SupervisorScopeService,
+    @Optional() private readonly interventions?: InterventionsService,
   ) {}
 
   private toDateOnly(value: string) {
@@ -453,79 +455,59 @@ export class AbsencesService {
       return { absenceId: id, interventions: [] };
     }
 
-    const dayEnd = new Date(absence.to.getTime());
-    dayEnd.setUTCHours(23, 59, 59, 999);
-
-    const affectedInterventions = await this.prisma.intervention.findMany({
-      where: {
-        date: { gte: absence.from, lte: dayEnd },
-        status: { in: ['PLANNED', 'IN_PROGRESS'] },
-        assignments: { some: { userId: absence.userId } },
-      },
-      include: { assignments: true, site: true },
-    });
-
-    if (!affectedInterventions.length) {
+    // Planning de la période (gabarits + changements d'un jour), missions déjà créées comprises :
+    // les missions futures ne sont créées que peu avant leur début.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+    const from = absence.from.toISOString().slice(0, 10);
+    const startDate = from > today ? from : today;
+    const endDate = absence.to.toISOString().slice(0, 10);
+    if (startDate > endDate || !this.interventions) {
+      return { absenceId: id, interventions: [] };
+    }
+    const planning = await this.interventions.getPlanning({ startDate, endDate });
+    const affected = planning.filter(
+      (o) =>
+        o.agentIds.includes(absence.userId) &&
+        (o.source === 'projected' || o.status === 'PLANNED' || o.status === 'IN_PROGRESS'),
+    );
+    if (!affected.length) {
       return { absenceId: id, interventions: [] };
     }
 
     const agents = await this.prisma.user.findMany({
       where: { role: 'AGENT', active: true, id: { not: absence.userId } },
     });
+    const otherAbsences = await this.prisma.absence.findMany({
+      where: {
+        status: 'APPROVED',
+        userId: { in: agents.map((a) => a.id) },
+        from: { lte: new Date(`${endDate}T23:59:59.999Z`) },
+        to: { gte: new Date(`${startDate}T00:00:00.000Z`) },
+      },
+    });
 
-    const results = await Promise.all(
-      affectedInterventions.map(async (intervention) => {
-        const dateStr = intervention.date.toISOString().slice(0, 10);
-        const dayStart = this.toDateOnly(dateStr);
-        const thisDayEnd = new Date(dayStart.getTime());
-        thisDayEnd.setUTCHours(23, 59, 59, 999);
-        const start = new Date(`${dateStr}T${intervention.startTime}:00`);
-        const end = new Date(`${dateStr}T${intervention.endTime}:00`);
-        const assignedIds = new Set(intervention.assignments.map((a) => a.userId));
-
-        const [sameDayInterventions, sameDayAbsences] = await Promise.all([
-          this.prisma.intervention.findMany({
-            where: {
-              date: dayStart,
-              id: { not: intervention.id },
-              status: { notIn: ['CANCELLED'] },
-              assignments: { some: { userId: { in: agents.map((a) => a.id) } } },
-            },
-            include: { assignments: true },
-          }),
-          this.prisma.absence.findMany({
-            where: {
-              status: 'APPROVED',
-              userId: { in: agents.map((a) => a.id) },
-              from: { lte: thisDayEnd },
-              to: { gte: dayStart },
-            },
-          }),
-        ]);
-
-        const busyIds = new Set<string>();
-        sameDayAbsences.forEach((a) => busyIds.add(a.userId));
-        sameDayInterventions.forEach((other) => {
-          const otherStart = new Date(`${dateStr}T${other.startTime}:00`);
-          const otherEnd = new Date(`${dateStr}T${other.endTime}:00`);
-          const overlaps = start < otherEnd && otherStart < end;
-          if (!overlaps) return;
-          other.assignments.forEach((a) => busyIds.add(a.userId));
-        });
-
-        const candidates = agents.filter((agent) => !assignedIds.has(agent.id) && !busyIds.has(agent.id));
-
-        return {
-          interventionId: intervention.id,
-          siteId: intervention.siteId,
-          siteName: intervention.site.name,
-          date: dateStr,
-          startTime: intervention.startTime,
-          endTime: intervention.endTime,
-          candidates: candidates.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`.trim() })),
-        };
-      }),
-    );
+    const results = affected.map((occ) => {
+      const busyIds = new Set<string>();
+      otherAbsences
+        .filter((a) => a.from.toISOString().slice(0, 10) <= occ.date && a.to.toISOString().slice(0, 10) >= occ.date)
+        .forEach((a) => busyIds.add(a.userId));
+      planning
+        .filter((o) => o.date === occ.date && o.stopId !== occ.stopId && o.startTime < occ.endTime && occ.startTime < o.endTime)
+        .forEach((o) => o.agentIds.forEach((agentId) => busyIds.add(agentId)));
+      const candidates = agents.filter((agent) => !occ.agentIds.includes(agent.id) && !busyIds.has(agent.id));
+      return {
+        interventionId: occ.interventionId ?? null,
+        templateId: occ.templateId,
+        stopId: occ.stopId,
+        siteId: occ.siteId,
+        siteName: occ.siteName,
+        date: occ.date,
+        startTime: occ.startTime,
+        endTime: occ.endTime,
+        agentIds: occ.agentIds,
+        candidates: candidates.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`.trim() })),
+      };
+    });
 
     return { absenceId: id, interventions: results };
   }

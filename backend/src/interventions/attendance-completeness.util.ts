@@ -23,7 +23,12 @@ export function checkAttendanceCompleteness(
   attendances: AttendanceCompletenessInput[],
 ): AttendanceCompletenessResult {
   const attForAssigned = attendances.filter((a) => assignedUserIds.includes(a.userId));
-  const missingStart = attForAssigned.filter((a) => !a.arrivalTime && !a.checkInTime).map((a) => a.userId);
+  // Un agent affecté sans aucune ligne de pointage n'a pas commencé : la mission n'est pas validable.
+  const withoutRecord = assignedUserIds.filter((id) => !attForAssigned.some((a) => a.userId === id));
+  const missingStart = [
+    ...withoutRecord,
+    ...attForAssigned.filter((a) => !a.arrivalTime && !a.checkInTime).map((a) => a.userId),
+  ];
   const missingEnd = attForAssigned.filter((a) => !a.checkOutTime).map((a) => a.userId);
   const pending = attForAssigned.filter((a) => a.status !== 'COMPLETED').map((a) => a.userId);
   return {

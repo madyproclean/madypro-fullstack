@@ -90,4 +90,5 @@ export const APPROVAL_ACTION_LABELS: Record<ApprovalActionType, string> = {
   CANCEL_INTERVENTION: 'Annulation de mission',
   CREATE_TEMPLATE_BATCH: 'Génération de missions',
   VALIDATE_TEMPLATE: 'Validation de gabarit',
+  CANCEL_OCCURRENCE: "Annulation d'un passage (un jour)",
 };

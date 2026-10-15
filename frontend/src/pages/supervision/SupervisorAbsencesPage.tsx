@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthContext } from '../../context/AuthContext';
-import { listAbsences, updateAbsenceStatus } from '../../services/api/absences.api';
+import { listAbsences, updateAbsenceStatus, approveAbsenceLevel1 } from '../../services/api/absences.api';
 import { listSites } from '../../services/api/sites.api';
 import { Absence } from '../../types/absence';
 import { Site } from '../../types/site';
@@ -67,6 +67,18 @@ export const SupervisorAbsencesPage: React.FC = () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Impossible de mettre à jour l’absence';
       notify(message, 'error');
+    }
+  };
+
+  // Absence longue : le superviseur donne le premier accord, l'accord final revient à l'administrateur.
+  const handleLevel1 = async (id: string) => {
+    if (!token) return;
+    try {
+      const updated = await approveAbsenceLevel1(token, id);
+      setAbsences((prev) => prev.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+      notify('Premier accord donné : l’administrateur doit maintenant confirmer');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Impossible de donner votre accord', 'error');
     }
   };
 
@@ -155,10 +167,20 @@ export const SupervisorAbsencesPage: React.FC = () => {
                     </td>
                     <td>
                       {abs.status === 'PENDING' ? (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <Button type="button" variant="ghost" className="btn--compact" icon={Check} onClick={() => handleStatus(abs.id, 'APPROVED')}>
-                            Valider
-                          </Button>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {abs.requiresSecondApproval ? (
+                            abs.level1ApprovedBy ? (
+                              <small style={{ color: 'var(--color-muted)' }}>Votre accord est donné · en attente de l’administrateur</small>
+                            ) : (
+                              <Button type="button" variant="ghost" className="btn--compact" icon={Check} onClick={() => handleLevel1(abs.id)}>
+                                Donner mon accord
+                              </Button>
+                            )
+                          ) : (
+                            <Button type="button" variant="ghost" className="btn--compact" icon={Check} onClick={() => handleStatus(abs.id, 'APPROVED')}>
+                              Valider
+                            </Button>
+                          )}
                           <Button type="button" variant="ghost" className="btn--compact" icon={X} onClick={() => handleStatus(abs.id, 'REJECTED')}>
                             Refuser
                           </Button>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { TemplateEditorSheet } from '../TemplateEditorSheet';
-import { saveSiteTemplate } from '@/services/api/supervision.api';
+import { previewSiteTemplateImpact, saveSiteTemplate } from '@/services/api/supervision.api';
 
 jest.mock('@/context/AuthContext', () => ({ useAuthContext: () => ({ token: 't', user: { id: 'sup-1' } }) }));
 jest.mock('@/context/ToastContext', () => ({ useToast: () => ({ showToast: jest.fn() }) }));
@@ -34,6 +34,14 @@ jest.mock('@/services/api/supervision.api', () => ({
     },
   ]),
   saveSiteTemplate: jest.fn().mockResolvedValue({}),
+  previewSiteTemplateImpact: jest.fn().mockResolvedValue({
+    period: { startDate: '2026-10-16', endDate: '2026-10-29' },
+    requiresValidation: true,
+    added: [{ date: '2026-10-19', startTime: '07:00', endTime: '10:00', categoryLabel: 'Parties communes', agents: [] }],
+    removed: [],
+    changed: [],
+    warnings: ['Arthur Martin est en absence validée le 2026-10-21 : prévoir un remplaçant ce jour-là.'],
+  }),
 }));
 
 describe('gabarit d’un site sur la tablette', () => {
@@ -42,7 +50,8 @@ describe('gabarit d’un site sur la tablette', () => {
   it("n'envoie rien tant que le gabarit n'a pas changé", async () => {
     render(<TemplateEditorSheet visible siteId="site-a" onClose={jest.fn()} />);
     await screen.findByText('Créneau 1');
-    fireEvent.press(screen.getByText('Envoyer pour validation'));
+    fireEvent.press(screen.getByText('Voir l’effet sur le planning'));
+    expect(previewSiteTemplateImpact).not.toHaveBeenCalled();
     expect(saveSiteTemplate).not.toHaveBeenCalled();
   });
 
@@ -52,6 +61,11 @@ describe('gabarit d’un site sur la tablette', () => {
     await screen.findByText('Créneau 1');
     fireEvent.press(screen.getByText('Ajouter un créneau'));
     expect(screen.getByText('Créneau 3')).toBeTruthy();
+    // D'abord l'effet sur le planning (alertes comprises), puis l'envoi.
+    fireEvent.press(screen.getByText('Voir l’effet sur le planning'));
+    await screen.findByText('Missions ajoutées (1)');
+    expect(screen.getByText(/en absence validée/)).toBeTruthy();
+    expect(saveSiteTemplate).not.toHaveBeenCalled();
     fireEvent.press(screen.getByText('Envoyer pour validation'));
 
     await waitFor(() => expect(saveSiteTemplate).toHaveBeenCalled());
@@ -69,8 +83,35 @@ describe('gabarit d’un site sur la tablette', () => {
     await screen.findByText('Créneau 1');
     fireEvent.press(screen.getByLabelText('lundi'));
     fireEvent.press(screen.getByLabelText('mercredi'));
-    fireEvent.press(screen.getByText('Envoyer pour validation'));
+    fireEvent.press(screen.getByText('Voir l’effet sur le planning'));
     expect(saveSiteTemplate).not.toHaveBeenCalled();
     expect(screen.getByText('Créneau 1 : choisissez au moins un jour.')).toBeTruthy();
+  });
+});
+
+describe('version en attente', () => {
+  it('reprend la modification déjà envoyée et rappelle que la version validée reste active', async () => {
+    const { listSiteTemplates } = jest.requireMock('@/services/api/supervision.api');
+    (listSiteTemplates as jest.Mock).mockResolvedValueOnce([
+      {
+        id: 'tpl-1',
+        label: 'Gabarit Acacias',
+        siteId: 'site-a',
+        startDate: '2026-10-01',
+        endDate: null,
+        active: true,
+        validatedAt: '2026-10-02T08:00:00.000Z',
+        stops: [{ id: 'stop-1', daysOfWeek: [1], intervalWeeks: 1, categoryId: 'cat-1', startTime: '07:00', endTime: '10:00', agentIds: [] }],
+        pendingVersion: {
+          stops: [
+            { id: 'stop-1', daysOfWeek: [1], intervalWeeks: 1, categoryId: 'cat-1', startTime: '07:00', endTime: '10:00', agentIds: [] },
+            { daysOfWeek: [5], intervalWeeks: 1, categoryId: 'cat-1', startTime: '18:00', endTime: '20:00', agentIds: [] },
+          ],
+        },
+      },
+    ]);
+    render(<TemplateEditorSheet visible siteId="site-a" onClose={jest.fn()} />);
+    await screen.findByText('Créneau 2');
+    expect(screen.getByText(/la version validée continue de s'appliquer/)).toBeTruthy();
   });
 });

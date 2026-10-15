@@ -14,6 +14,7 @@ import { Anomaly } from '@/types/anomaly';
 import { ApprovalRequest, MissionAttendance } from '@/types/supervision';
 import { ANOMALY_LABELS, APPROVAL_ACTION_LABELS, formatClock, formatDayLong, missionStatus } from './format';
 import { CancelMissionSheet } from './CancelMissionSheet';
+import { DayChangeSheet } from './DayChangeSheet';
 import { TemplateEditorSheet } from './TemplateEditorSheet';
 
 type Props = {
@@ -43,6 +44,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [replacing, setReplacing] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -278,6 +280,9 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
       {canRequestChange ? (
         <View style={styles.actions}>
           {/* Une mission se modifie par son gabarit ; seule l'annulation ponctuelle reste possible ici. */}
+          {mission.status === 'PLANNED' && mission.generatedFromTemplateId && mission.generatedFromStopId ? (
+            <ActionButton label="Remplacer ce jour-là" icon="swap-horizontal-outline" onPress={() => setReplacing(true)} />
+          ) : null}
           <ActionButton label="Modifier le gabarit" icon="git-branch-outline" onPress={() => setEditingTemplate(true)} />
           {mission.status === 'PLANNED' ? (
             <ActionButton label="Annuler la mission" icon="close-circle-outline" onPress={() => setCancelling(true)} />
@@ -291,6 +296,28 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
         focusStopId={mission.generatedFromStopId}
         onClose={() => setEditingTemplate(false)}
         onSaved={() => onChanged?.()}
+      />
+
+      <DayChangeSheet
+        occurrence={
+          replacing && mission.generatedFromTemplateId && mission.generatedFromStopId
+            ? {
+                templateId: mission.generatedFromTemplateId,
+                stopId: mission.generatedFromStopId,
+                date: mission.date.slice(0, 10),
+                siteName: mission.siteName,
+                startTime: mission.startTime,
+                endTime: mission.endTime,
+                agentIds: mission.agentIds,
+              }
+            : null
+        }
+        mode="replace"
+        onClose={() => setReplacing(false)}
+        onDone={() => {
+          load();
+          onChanged?.();
+        }}
       />
 
       <CancelMissionSheet

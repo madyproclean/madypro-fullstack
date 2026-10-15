@@ -17,6 +17,9 @@ import { Modal, ModalHeader, ModalBody } from '../../components/ui/Modal';
 import { Badge, BadgeTone } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { BarChartCard } from '../../components/charts/BarChartCard';
+import { TemplateImpactPanel } from '../../components/interventions/TemplateImpactPanel';
+import { getTemplate, previewTemplateImpact } from '../../services/api/interventions.api';
+import { TemplateImpact } from '../../types/intervention';
 import { Check, ClipboardCheck, X } from 'lucide-react';
 
 const ACTION_LABELS: Record<ApprovalActionType, string> = {
@@ -27,6 +30,7 @@ const ACTION_LABELS: Record<ApprovalActionType, string> = {
   CANCEL_INTERVENTION: 'Annulation d’intervention',
   CREATE_TEMPLATE_BATCH: 'Génération d’un gabarit',
   VALIDATE_TEMPLATE: 'Validation d’un gabarit',
+  CANCEL_OCCURRENCE: 'Annulation d’un passage (un jour)',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -54,6 +58,27 @@ export const ApprovalsPage: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [datesModalId, setDatesModalId] = useState<string | null>(null);
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
+  const [impactById, setImpactById] = useState<Record<string, TemplateImpact | 'loading'>>({});
+
+  /** Effet de la version proposée d'un gabarit sur les 2 prochaines semaines. */
+  const toggleImpact = async (req: ApprovalRequest) => {
+    if (!token || !req.entityId) return;
+    if (impactById[req.id]) {
+      setImpactById(({ [req.id]: _, ...rest }) => rest);
+      return;
+    }
+    setImpactById((prev) => ({ ...prev, [req.id]: 'loading' }));
+    try {
+      const template = await getTemplate(token, req.entityId);
+      const proposal = (template.pendingVersion as any) ?? { stops: template.stops };
+      const impact = await previewTemplateImpact(token, template.id, { ...proposal, active: true });
+      // Gabarit jamais validé : tout ce qu'il prévoit est « ajouté ».
+      setImpactById((prev) => ({ ...prev, [req.id]: { ...impact, requiresValidation: false } }));
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Aperçu impossible', 'error');
+      setImpactById(({ [req.id]: _, ...rest }) => rest);
+    }
+  };
 
   const load = () => {
     if (!token) return Promise.resolve();
@@ -151,8 +176,11 @@ export const ApprovalsPage: React.FC = () => {
       case 'VALIDATE_TEMPLATE': {
         const validate = payload as ValidateTemplatePayload;
         const siteLabel = validate.siteName ?? (validate.siteId ? siteNames[validate.siteId] ?? validate.siteId : '');
-        return `${validate.templateLabel ?? 'Gabarit'}${siteLabel ? ` — ${siteLabel}` : ''}`;
+        const pending = (payload as any).pending ? ' · modification (la version actuelle reste active en attendant)' : '';
+        return `${validate.templateLabel ?? 'Gabarit'}${siteLabel ? ` — ${siteLabel}` : ''}${pending}`;
       }
+      case 'CANCEL_OCCURRENCE':
+        return req.summary ?? `${payload.siteName} · ${payload.date} ${payload.startTime}–${payload.endTime} · motif : ${payload.reason}`;
       default:
         return '';
     }
@@ -265,6 +293,31 @@ export const ApprovalsPage: React.FC = () => {
                         >
                           Voir les dates
                         </button>
+                      </div>
+                    )}
+                    {req.actionType === 'VALIDATE_TEMPLATE' && req.status === 'PENDING' && (
+                      <div style={{ marginTop: '0.35rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleImpact(req)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: 'var(--color-accent)',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          {impactById[req.id] ? 'Masquer l’effet' : 'Voir l’effet sur le planning'}
+                        </button>
+                        {impactById[req.id] === 'loading' && <div className="card__meta">Calcul...</div>}
+                        {impactById[req.id] && impactById[req.id] !== 'loading' && (
+                          <div style={{ marginTop: '0.4rem', minWidth: 320 }}>
+                            <TemplateImpactPanel impact={impactById[req.id] as TemplateImpact} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>

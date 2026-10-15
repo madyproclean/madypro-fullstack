@@ -70,6 +70,47 @@ export type InterventionTemplate = {
   validatedById: string | null;
   createdAt: string;
   stops: TemplateStop[];
+  /** Modification proposée par un superviseur, en attente : la version actuelle reste active. */
+  pendingVersion?: { label?: string; stops?: TemplateStop[] } | null;
+  pendingRequestedAt?: string | null;
+  pendingRequestedByName?: string | null;
+};
+
+export type TemplateImpactItem = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  categoryLabel: string | null;
+  agents: string[];
+};
+
+export type TemplateImpact = {
+  period: { startDate: string; endDate: string };
+  requiresValidation: boolean;
+  added: TemplateImpactItem[];
+  removed: TemplateImpactItem[];
+  changed: { before: TemplateImpactItem; after: TemplateImpactItem }[];
+  warnings: string[];
+};
+
+export type TemplateRevision = {
+  id: string;
+  createdAt: string;
+  authorName: string | null;
+  approvedByName: string | null;
+  note: string | null;
+  snapshot: { label: string; startDate: string; endDate: string | null; active: boolean; stops: TemplateStop[] };
+};
+
+export type TemplateException = {
+  id: string;
+  stopId: string;
+  date: string;
+  kind: 'CANCEL' | 'REPLACE_AGENTS';
+  agents: { id: string; name: string }[];
+  reason: string | null;
+  createdByName: string | null;
+  createdAt: string;
 };
 
 export type TemplateOccurrence = {
@@ -103,4 +144,6 @@ export type PlanningEntry = {
   source: 'real' | 'projected';
   interventionId?: string;
   status?: InterventionStatus;
+  /** Remplacement prévu ce jour-là seulement (exception du gabarit). */
+  exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] };
 };

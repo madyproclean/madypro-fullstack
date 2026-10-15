@@ -5,9 +5,10 @@ import { UsersModule } from '../users/users.module';
 import { SitesModule } from '../sites/sites.module';
 import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { InterventionsModule } from '../interventions/interventions.module';
 
 @Module({
-  imports: [UsersModule, SitesModule, AuditModule, NotificationsModule],
+  imports: [UsersModule, SitesModule, AuditModule, NotificationsModule, InterventionsModule],
   controllers: [AbsencesController],
   providers: [AbsencesService],
 })

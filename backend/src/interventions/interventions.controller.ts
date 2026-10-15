@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, UseGuards, forwardRef } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, UseGuards, forwardRef } from '@nestjs/common';
 import { Request } from 'express';
 import { assertNoPlanningChange, InterventionsService, InterventionFilters } from './interventions.service';
 import { UpdateInterventionDto } from './dto/update-intervention.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SetSignatureDto } from './dto/set-signature.dto';
+import { CreateTemplateExceptionDto } from './dto/create-template-exception.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -202,6 +203,67 @@ export class InterventionsController {
     await this.assertTemplateInScope(req, id);
     if (dto.siteId !== undefined) await this.scope.assertSite(user, dto.siteId);
     return this.service.updateTemplate(id, dto, user.sub, user.role);
+  }
+
+  /** Aperçu d'un nouveau gabarit avant sa création. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Post('templates/impact')
+  async previewNewTemplateImpact(@Body() dto: UpdateTemplateDto, @Req() req: Request) {
+    if (!dto.siteId) throw new BadRequestException('Site manquant');
+    await this.scope.assertSite(req.user as any, dto.siteId);
+    return this.service.previewTemplateImpact(null, dto);
+  }
+
+  /** Aperçu des missions ajoutées, retirées ou modifiées par une modification, avant enregistrement. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Post('templates/:id/impact')
+  async previewTemplateImpact(@Param('id') id: string, @Body() dto: UpdateTemplateDto, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
+    const impact = await this.service.previewTemplateImpact(id, dto);
+    return { ...impact, requiresValidation: (req.user as any).role !== 'ADMIN' };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Get('templates/:id/revisions')
+  async listTemplateRevisions(@Param('id') id: string, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
+    return this.service.listTemplateRevisions(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Post('templates/:id/revisions/:revisionId/restore')
+  restoreTemplateRevision(@Param('id') id: string, @Param('revisionId') revisionId: string, @Req() req: Request) {
+    return this.service.restoreTemplateRevision(id, revisionId, (req.user as any).sub);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Get('templates/:id/exceptions')
+  async listTemplateExceptions(@Param('id') id: string, @Req() req: Request, @Query('from') from?: string) {
+    await this.assertTemplateInScope(req, id);
+    return this.service.listTemplateExceptions(id, from);
+  }
+
+  /** Exception d'un seul jour : remplacer les agents (direct) ou annuler (validation admin pour un superviseur). */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Post('templates/:id/exceptions')
+  async createTemplateException(@Param('id') id: string, @Body() dto: CreateTemplateExceptionDto, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
+    const user = req.user as any;
+    return this.service.createTemplateException(id, dto, { id: user.sub, role: user.role });
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Delete('templates/:id/exceptions/:exceptionId')
+  async deleteTemplateException(@Param('id') id: string, @Param('exceptionId') exceptionId: string, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
+    return this.service.deleteTemplateException(id, exceptionId, (req.user as any).sub);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

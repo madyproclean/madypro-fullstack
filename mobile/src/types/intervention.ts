@@ -33,4 +33,5 @@ export type Intervention = {
   hasAnomaly?: boolean;
   /** Créneau du gabarit dont la mission est issue (absent pour une mission saisie à la main). */
   generatedFromStopId?: string;
+  generatedFromTemplateId?: string;
 };

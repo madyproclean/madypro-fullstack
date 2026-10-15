@@ -11,7 +11,8 @@ export type ApprovalActionType =
   | 'UNASSIGN_AGENT'
   | 'CANCEL_INTERVENTION'
   | 'CREATE_TEMPLATE_BATCH'
-  | 'VALIDATE_TEMPLATE';
+  | 'VALIDATE_TEMPLATE'
+  | 'CANCEL_OCCURRENCE';
 
 export type CreateApprovalRequestInput = {
   actionType: ApprovalActionType;
@@ -32,6 +33,7 @@ const ACTION_LABELS: Record<ApprovalActionType, string> = {
   CANCEL_INTERVENTION: 'Annulation d’intervention',
   CREATE_TEMPLATE_BATCH: 'Génération d’un lot d’interventions',
   VALIDATE_TEMPLATE: 'Validation d’un gabarit',
+  CANCEL_OCCURRENCE: 'Annulation d’un créneau pour un jour',
 };
 
 @Injectable()
@@ -98,6 +100,14 @@ export class ApprovalsService {
     }
 
     return request;
+  }
+
+  /** Marque comme remplacées les demandes encore en attente sur cet élément. */
+  async supersedePending(entityType: string, entityId: string, actionType: ApprovalActionType) {
+    await this.prisma.approvalRequest.updateMany({
+      where: { entityType, entityId, actionType, status: 'PENDING' },
+      data: { status: 'SUPERSEDED' },
+    });
   }
 
   async findPending(id: string) {
@@ -224,6 +234,17 @@ export class ApprovalsService {
       if (item.actionType === 'CREATE_INTERVENTION' && payload.date) {
         const nature = payload.subType ? ` · ${payload.subType}` : '';
         summaries.set(item.id, `${siteName.get(payload.siteId) ?? 'Site'} · ${slot(payload.date, payload.startTime, payload.endTime)}${nature}`);
+        continue;
+      }
+      if (item.actionType === 'CANCEL_OCCURRENCE' && payload.date) {
+        summaries.set(
+          item.id,
+          `${payload.siteName ?? 'Site'} · ${slot(payload.date, payload.startTime, payload.endTime)}${payload.reason ? ` · motif : ${payload.reason}` : ''}`,
+        );
+        continue;
+      }
+      if (item.actionType === 'VALIDATE_TEMPLATE' && payload.siteName) {
+        summaries.set(item.id, `${payload.siteName}${payload.pending ? ' · la version actuelle reste active en attendant' : ''}`);
         continue;
       }
       const intervention = item.entityId ? interventionById.get(item.entityId) : undefined;

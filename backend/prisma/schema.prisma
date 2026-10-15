@@ -81,6 +81,10 @@ enum AuditAction {
   CREATE_TEMPLATE_STOP
   UPDATE_TEMPLATE_STOP_AGENTS
   DELETE_TEMPLATE_STOP
+  CREATE_TEMPLATE_EXCEPTION
+  DELETE_TEMPLATE_EXCEPTION
+  RESTORE_TEMPLATE_REVISION
+  PROPOSE_TEMPLATE_CHANGE
   CREATE_APPROVAL_REQUEST
   APPROVE_REQUEST
   REJECT_REQUEST
@@ -124,6 +128,7 @@ enum ApprovalActionType {
   CANCEL_INTERVENTION
   CREATE_TEMPLATE_BATCH
   VALIDATE_TEMPLATE
+  CANCEL_OCCURRENCE
 }
 
 enum ApprovalStatus {
@@ -507,6 +512,48 @@ model InterventionTemplate {
   updatedAt     DateTime       @updatedAt
   stops         TemplateStop[]
   interventions Intervention[]
+  /// Modification proposée par un superviseur, en attente de validation : la version actuelle reste active.
+  pendingVersion       Json?
+  pendingRequestedById String?
+  pendingRequestedAt   DateTime?
+  revisions            TemplateRevision[]
+  exceptions           TemplateException[]
+}
+
+/// Photo d'une version appliquée d'un gabarit (historique, retour en arrière).
+model TemplateRevision {
+  id           String               @id @default(cuid())
+  templateId   String
+  template     InterventionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  snapshot     Json
+  authorId     String?
+  approvedById String?
+  note         String?
+  createdAt    DateTime             @default(now())
+
+  @@index([templateId, createdAt])
+}
+
+enum TemplateExceptionKind {
+  CANCEL
+  REPLACE_AGENTS
+}
+
+/// Exception datée d'un créneau de gabarit : un seul jour change, le gabarit reste la référence.
+model TemplateException {
+  id          String                @id @default(cuid())
+  templateId  String
+  template    InterventionTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  stopId      String
+  date        DateTime
+  kind        TemplateExceptionKind
+  agentIds    String[]              @default([])
+  reason      String?
+  createdById String?
+  createdAt   DateTime              @default(now())
+
+  @@unique([stopId, date])
+  @@index([templateId, date])
 }
 
 model TemplateStop {
