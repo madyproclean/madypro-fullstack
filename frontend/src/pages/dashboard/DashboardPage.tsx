@@ -6,6 +6,8 @@ import { listLowStockInventory } from '../../services/api/inventory.api';
 import { DashboardSummary } from '../../types/dashboard';
 import { InventoryItem } from '../../types/inventory';
 import { Button } from '../../components/ui/Button';
+import { DaySummaryPanel } from '../../components/supervision/DaySummaryPanel';
+import { QualityOverviewPanel } from '../../components/supervision/QualityOverviewPanel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { StatCard, StatCardBadgeTone } from '../../components/ui/StatCard';
@@ -234,7 +236,10 @@ export const DashboardPage: React.FC = () => {
         }
       />
 
-      <div className="filter-grid" role="search">
+      <DaySummaryPanel missionsPath="/interventions" />
+      <QualityOverviewPanel />
+
+      <div className="filter-grid" role="search" style={{ marginTop: '1rem' }}>
         <label className="filter-field filter-card filter-card--wide">
           Recherche
           <input

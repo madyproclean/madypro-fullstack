@@ -1090,6 +1090,40 @@ export class InterventionsService implements OnModuleInit {
   }
 
 
+  /**
+   * Validation groupée par le superviseur : chaque mission « à valider » sans anomalie ouverte et
+   * au pointage complet passe en « Terminée » ; les autres sont rendues avec la raison du refus.
+   */
+  async validateMany(ids: string[], viewer: { id: string; role: string }) {
+    const validated: string[] = [];
+    const refused: { id: string; siteName?: string; reason: string }[] = [];
+    for (const id of Array.from(new Set(ids)).slice(0, 100)) {
+      const record = await this.prisma.intervention.findUnique({
+        where: { id },
+        select: { status: true, site: { select: { name: true } }, anomalies: { where: { status: 'NEW' }, select: { id: true } } },
+      });
+      if (!record) {
+        refused.push({ id, reason: 'Mission introuvable' });
+        continue;
+      }
+      if (record.status !== 'NEEDS_REVIEW') {
+        refused.push({ id, siteName: record.site.name, reason: "Elle n'est pas à valider" });
+        continue;
+      }
+      if (record.anomalies.length) {
+        refused.push({ id, siteName: record.site.name, reason: 'Anomalie à traiter avant validation' });
+        continue;
+      }
+      try {
+        await this.updateStatus(id, 'COMPLETED', viewer);
+        validated.push(id);
+      } catch (err) {
+        refused.push({ id, siteName: record.site.name, reason: (err as Error).message });
+      }
+    }
+    return { validated, refused };
+  }
+
   async cancel(id: string, observation: string, actorId = 'system') {
     if (!observation) {
       throw new BadRequestException("L'observation est requise pour annuler une intervention");

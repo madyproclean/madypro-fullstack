@@ -166,6 +166,8 @@ export class ApprovalsService {
         title,
         message,
         category: 'approval',
+        // Ouvre « Mes demandes » sur la tablette du superviseur.
+        data: { path: 'requests' },
       });
     } catch (err) {
       this.logger.warn(`Notification de décision d'approbation échouée: ${(err as Error).message}`);

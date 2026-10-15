@@ -28,12 +28,14 @@ import { Tabs, TabPanel } from '../../components/ui/Tabs';
 import { formatHour } from '../../utils/datetime';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
+import { SiteFollowUpPanel } from '../../components/supervision/SiteFollowUpPanel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Award, ClipboardCheck, UserX, AlertTriangle } from 'lucide-react';
 
 const PROFILE_TABS = [
   { id: 'general', label: 'Informations générales' },
   { id: 'quality', label: 'Qualité & agents' },
+  { id: 'followup', label: 'Suivi & contrôles' },
   { id: 'planning', label: 'Planning' },
   { id: 'attendance', label: 'Pointages' },
   { id: 'absences', label: 'Absences' },
@@ -591,6 +593,10 @@ export const SiteProfilePage: React.FC = () => {
           </table>
         </div>
       </div>
+      </TabPanel>
+
+      <TabPanel active={activeTab === 'followup'}>
+        {id && <SiteFollowUpPanel siteId={id} />}
       </TabPanel>
 
       <TabPanel active={activeTab === 'qr'}>

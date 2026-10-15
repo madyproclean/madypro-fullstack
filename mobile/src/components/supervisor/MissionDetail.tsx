@@ -15,6 +15,7 @@ import { ApprovalRequest, MissionAttendance } from '@/types/supervision';
 import { ANOMALY_LABELS, APPROVAL_ACTION_LABELS, formatClock, formatDayLong, missionStatus } from './format';
 import { CancelMissionSheet } from './CancelMissionSheet';
 import { DayChangeSheet } from './DayChangeSheet';
+import { RegularizeSheet, RegularizeTarget } from './RegularizeSheet';
 import { TemplateEditorSheet } from './TemplateEditorSheet';
 
 type Props = {
@@ -45,6 +46,7 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
   const [cancelling, setCancelling] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [replacing, setReplacing] = useState(false);
+  const [regularizing, setRegularizing] = useState<RegularizeTarget | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -190,6 +192,19 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
                   label={complete ? 'Complet' : started ? 'En cours' : upcoming ? 'Pas encore arrivé' : 'Non pointé'}
                   tone={complete ? 'success' : started ? 'info' : upcoming ? 'neutral' : 'danger'}
                 />
+                {att && !upcoming && mission.status !== 'COMPLETED' && mission.status !== 'CANCELLED' ? (
+                  <ActionButton
+                    label="Corriger"
+                    onPress={() =>
+                      setRegularizing({
+                        attendanceId: att.id,
+                        agentName: agent.name,
+                        checkInTime: arrival !== '—' ? arrival : mission.startTime,
+                        checkOutTime: departure !== '—' ? departure : mission.endTime,
+                      })
+                    }
+                  />
+                ) : null}
               </View>
             );
           })
@@ -320,6 +335,15 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
         }}
       />
 
+      <RegularizeSheet
+        target={regularizing}
+        onClose={() => setRegularizing(null)}
+        onDone={() => {
+          load();
+          onChanged?.();
+        }}
+      />
+
       <CancelMissionSheet
         mission={cancelling ? mission : null}
         onClose={() => setCancelling(false)}
@@ -337,14 +361,19 @@ export const MissionDetail: React.FC<Props> = ({ interventionId, onChanged }) =>
               <View accessibilityRole="alert" style={styles.warning}>
                 <Ionicons name="warning-outline" size={20} color={theme.colors.status.late} />
                 <Text style={styles.warningText}>
-                  Pointage incomplet pour {notCheckedOut.map((a) => a.name).join(', ')} : la mission sera tout de même
-                  comptée comme réalisée.
+                  Pointage incomplet pour {notCheckedOut.map((a) => a.name).join(', ')} : corrigez d'abord le pointage
+                  (bouton « Corriger » ci-dessus), la mission ne peut pas être validée sans.
                 </Text>
               </View>
             ) : null}
             <View style={styles.actions}>
               <ActionButton label="Annuler" onPress={() => setConfirming(false)} />
-              <ActionButton label={busy ? 'Validation…' : 'Confirmer la validation'} primary onPress={validate} disabled={busy} />
+              <ActionButton
+                label={busy ? 'Validation…' : 'Confirmer la validation'}
+                primary
+                onPress={validate}
+                disabled={busy || notCheckedOut.length > 0}
+              />
             </View>
           </View>
         ) : (

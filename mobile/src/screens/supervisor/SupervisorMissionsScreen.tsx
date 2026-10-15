@@ -17,7 +17,8 @@ import { PlannedMissionDetail } from '@/components/supervisor/PlannedMissionDeta
 import { TemplateEditorSheet } from '@/components/supervisor/TemplateEditorSheet';
 import { addDays, formatDayLong, missionStatus, toISODate } from '@/components/supervisor/format';
 import { fetchInterventions } from '@/services/api/interventions.api';
-import { getPlanning } from '@/services/api/supervision.api';
+import { getPlanning, validateMissions } from '@/services/api/supervision.api';
+import { useToast } from '@/context/ToastContext';
 import { PlanningOccurrence } from '@/types/supervision';
 import { Intervention } from '@/types/intervention';
 import { SupervisorTabParamList } from '@/navigation/types';
@@ -53,6 +54,9 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const { showToast } = useToast();
+  const [confirmBatch, setConfirmBatch] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
   const inFlight = useRef(false);
 
   // Ouverture directe d'une mission (depuis « Aujourd'hui », la carte ou une notification).
@@ -116,7 +120,29 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
     return [...byDate.entries()].map(([date, data]) => ({ date, data }));
   }, [missions, planned]);
 
-  const toValidate = missions.filter((m) => m.status === 'NEEDS_REVIEW').length;
+  const toValidateIds = missions.filter((m) => m.status === 'NEEDS_REVIEW').map((m) => m.id);
+  const toValidate = toValidateIds.length;
+
+  // Validation groupée : seules les missions en ordre passent ; les autres restent, avec la raison.
+  const validateAll = async () => {
+    if (!token || !toValidateIds.length) return;
+    setBatchBusy(true);
+    try {
+      const result = await validateMissions(token, toValidateIds);
+      const refused = result.refused.map((r) => `${r.siteName ?? 'Mission'} : ${r.reason}`).join(' · ');
+      showToast(
+        `${result.validated.length} mission(s) validée(s)`,
+        refused ? `À revoir : ${refused}` : 'Toutes les missions sélectionnées sont validées.',
+        refused ? 'info' : 'success',
+      );
+      setConfirmBatch(false);
+      load();
+    } catch (err) {
+      showToast('Validation impossible', err instanceof Error ? err.message : 'Réessayez.', 'error');
+    } finally {
+      setBatchBusy(false);
+    }
+  };
   const selected = missions.find((m) => m.id === selectedId);
   const selectedPlanned = planned.find((o) => plannedKey(o) === selectedId);
 
@@ -132,6 +158,29 @@ export default function SupervisorMissionsScreen({ route, navigation }: Props) {
       windowSize={7}
       ListHeaderComponent={
         <>
+          {toValidate > 1 ? (
+            <View style={styles.batch}>
+              <Ionicons name="checkmark-done-outline" size={22} color={theme.colors.primaryDark} />
+              <Text style={[styles.batchText, { flex: 1 }]}>
+                {confirmBatch
+                  ? `Valider les ${toValidate} missions à valider ? Celles avec une anomalie ou un pointage incomplet resteront à revoir.`
+                  : `${toValidate} missions à valider`}
+              </Text>
+              {confirmBatch ? (
+                <Pressable accessibilityRole="button" onPress={() => setConfirmBatch(false)} style={styles.batchGhost}>
+                  <Text style={styles.batchText}>Annuler</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                disabled={batchBusy}
+                onPress={() => (confirmBatch ? validateAll() : setConfirmBatch(true))}
+                style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={styles.newButtonLabel}>{batchBusy ? 'Validation…' : confirmBatch ? 'Confirmer' : 'Tout valider'}</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {updatedAt ? 'Mise à jour impossible : liste de la dernière mise à jour.' : error}
@@ -263,6 +312,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   newButtonLabel: { fontFamily: theme.fonts.bodySemiBold, fontSize: 16, color: '#fff' },
+  batch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderRadius: 16,
+    backgroundColor: theme.colors.primarySoft,
+  },
+  batchText: { fontFamily: theme.fonts.bodyMedium, fontSize: 15, color: theme.colors.ink },
+  batchGhost: { minHeight: 48, paddingHorizontal: 14, justifyContent: 'center' },
   placeholder: {
     flex: 1,
     alignItems: 'center',

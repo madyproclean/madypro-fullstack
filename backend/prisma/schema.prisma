@@ -179,6 +179,7 @@ model User {
   dashboardLayout             UserDashboardLayout?
   approvalRequestsMade        ApprovalRequest[]        @relation("ApprovalRequester")
   approvalRequestsReviewed    ApprovalRequest[]        @relation("ApprovalReviewer")
+  qualityInspections          QualityInspection[]      @relation("QualityInspector")
 }
 
 model ApprovalRequest {
@@ -348,6 +349,7 @@ model Site {
   quotes                 Quote[]
   invoices               Invoice[]
   clientPortalTokens     ClientPortalToken[]
+  qualityInspections     QualityInspection[]
 }
 
 model SiteContract {
@@ -498,20 +500,20 @@ model InterventionTruck {
 }
 
 model InterventionTemplate {
-  id            String         @id @default(cuid())
-  label         String
-  siteId        String         @unique
-  site          Site           @relation(fields: [siteId], references: [id])
-  startDate     DateTime       @default(now())
-  endDate       DateTime?
-  active        Boolean        @default(true)
-  validatedAt   DateTime?
-  validatedById String?
-  validatedBy   User?          @relation("TemplateValidator", fields: [validatedById], references: [id])
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  stops         TemplateStop[]
-  interventions Intervention[]
+  id                   String              @id @default(cuid())
+  label                String
+  siteId               String              @unique
+  site                 Site                @relation(fields: [siteId], references: [id])
+  startDate            DateTime            @default(now())
+  endDate              DateTime?
+  active               Boolean             @default(true)
+  validatedAt          DateTime?
+  validatedById        String?
+  validatedBy          User?               @relation("TemplateValidator", fields: [validatedById], references: [id])
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  stops                TemplateStop[]
+  interventions        Intervention[]
   /// Modification proposée par un superviseur, en attente de validation : la version actuelle reste active.
   pendingVersion       Json?
   pendingRequestedById String?
@@ -892,4 +894,23 @@ model UserDashboardLayout {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   layout    Json
   updatedAt DateTime @updatedAt
+}
+
+/// Contrôle qualité d'un site par le superviseur : grille notée, commentaire, photos.
+model QualityInspection {
+  id             String   @id @default(cuid())
+  siteId         String
+  site           Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  inspectorId    String
+  inspector      User     @relation("QualityInspector", fields: [inspectorId], references: [id])
+  interventionId String?
+  /// Note sur 100 calculée depuis la grille.
+  score          Int
+  /// [{ label, rating: 'GOOD' | 'AVERAGE' | 'POOR', comment? }]
+  items          Json
+  comment        String?
+  photos         String[] @default([])
+  createdAt      DateTime @default(now())
+
+  @@index([siteId, createdAt])
 }

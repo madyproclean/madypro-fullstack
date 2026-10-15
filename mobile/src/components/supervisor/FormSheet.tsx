@@ -14,6 +14,8 @@ type Props = {
   submitting?: boolean;
   canSubmit?: boolean;
   error?: string | null;
+  /** Fiche de consultation : un seul bouton (« Fermer »), pas d'« Annuler ». */
+  readOnly?: boolean;
   children: React.ReactNode;
 };
 
@@ -28,6 +30,7 @@ export const FormSheet: React.FC<Props> = ({
   submitting,
   canSubmit = true,
   error,
+  readOnly,
   children,
 }) => (
   <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} supportedOrientations={['portrait', 'landscape']}>
@@ -53,9 +56,11 @@ export const FormSheet: React.FC<Props> = ({
           </Text>
         ) : null}
         <View style={styles.footer}>
-          <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.button, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.buttonLabel}>Annuler</Text>
-          </Pressable>
+          {readOnly ? null : (
+            <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.button, pressed && { opacity: 0.7 }]}>
+              <Text style={styles.buttonLabel}>Annuler</Text>
+            </Pressable>
+          )}
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ disabled: !canSubmit || !!submitting }}

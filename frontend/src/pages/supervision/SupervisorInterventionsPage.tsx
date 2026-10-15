@@ -15,6 +15,7 @@ import { GabaritsPage } from '../interventions/GabaritsPage';
 import { useSupervisedSiteIds } from '../../hooks/useSupervisedSiteIds';
 import { formatDateTime } from '../../utils/datetime';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { validateMissions } from '../../services/api/supervision.api';
 
 const todayLocal = () => {
   const d = new Date();
@@ -86,6 +87,25 @@ export const SupervisorInterventionsPage: React.FC = () => {
       return true;
     });
   }, [filters.siteId, filters.status, interventions, supervisedSiteIds]);
+
+  const toValidateIds = filtered.filter((i) => i.status === 'NEEDS_REVIEW').map((i) => i.id);
+  const [batching, setBatching] = useState(false);
+
+  /** Valide d'un coup les missions à valider en ordre ; les autres restent avec la raison. */
+  const validateAll = async () => {
+    if (!token || !toValidateIds.length) return;
+    setBatching(true);
+    try {
+      const result = await validateMissions(token, toValidateIds);
+      const refused = result.refused.map((r) => `${r.siteName ?? 'Mission'} : ${r.reason}`).join(' · ');
+      notify(`${result.validated.length} mission(s) validée(s)${refused ? ` — à revoir : ${refused}` : ''}`, refused ? 'error' : undefined);
+      fetchInterventions({ silent: true });
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Validation impossible', 'error');
+    } finally {
+      setBatching(false);
+    }
+  };
 
   const confirmCancel = async (observation: string) => {
     if (!token || !cancelPromptFor) return;
@@ -175,6 +195,17 @@ export const SupervisorInterventionsPage: React.FC = () => {
           </select>
         </label>
       </div>
+
+      {toValidateIds.length > 1 && (
+        <div className="panel" style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ flex: 1 }}>
+            {toValidateIds.length} missions à valider. Celles avec une anomalie ou un pointage incomplet resteront à revoir.
+          </span>
+          <Button type="button" icon={CheckCheck} loading={batching} onClick={validateAll}>
+            Tout valider
+          </Button>
+        </div>
+      )}
 
       <div className="panel">
         {loading ? (

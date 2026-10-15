@@ -6,6 +6,7 @@ import { CheckOutDto } from './dto/check-out.dto';
 import { UsersService } from '../users/users.service';
 import { SitesService } from '../sites/sites.service';
 import { CreateManualAttendanceDto } from './dto/create-manual.dto';
+import { RegularizeAttendanceDto } from './dto/regularize-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { CancelAttendanceDto } from './dto/cancel-attendance.dto';
 import { AuditService } from '../audit/audit.service';
@@ -485,6 +486,56 @@ export class AttendanceService implements OnModuleInit {
       details: 'Modification horaires',
     });
     return this.toView(this.toEntity(record));
+  }
+
+  /**
+   * Régularisation d'un pointage (oubli, badge en panne…) : heures saisies par le superviseur, motif
+   * obligatoire, ancienne et nouvelle valeur gardées dans le journal d'audit.
+   */
+  async regularize(id: string, dto: RegularizeAttendanceDto, actor: { id: string; name?: string }) {
+    const record = await this.getRecord(id);
+    if (!dto.checkInTime && !dto.checkOutTime) {
+      throw new BadRequestException('Indiquez au moins une heure à corriger');
+    }
+    if (record.status === 'CANCELLED') {
+      throw new BadRequestException('Ce pointage est annulé');
+    }
+    const day = record.date.toISOString().slice(0, 10);
+    const checkIn = dto.checkInTime ? this.combine(day, dto.checkInTime) : record.checkInTime ?? record.arrivalTime;
+    let checkOut = dto.checkOutTime ? this.combine(day, dto.checkOutTime) : record.checkOutTime;
+    // Mission de nuit : une fin plus tôt que le début tombe le lendemain.
+    if (checkIn && checkOut && checkOut <= checkIn && dto.checkOutTime) {
+      checkOut = new Date(checkOut.getTime() + 24 * 60 * 60 * 1000);
+    }
+    if (checkIn && checkOut && checkOut <= checkIn) {
+      throw new BadRequestException("L'heure de fin doit être après l'heure de début");
+    }
+    if (checkOut && checkOut.getTime() > Date.now() + 5 * 60 * 1000) {
+      throw new BadRequestException("L'heure de fin ne peut pas être dans le futur");
+    }
+    const reason = dto.reason.trim();
+    const stamp = `Régularisé par ${actor.name ?? this.usersService.findOne(actor.id)?.name ?? 'le superviseur'} : ${reason}`;
+    const updated = await this.prisma.attendance.update({
+      where: { id },
+      data: {
+        checkInTime: checkIn ?? null,
+        checkOutTime: checkOut ?? null,
+        status: checkIn && checkOut ? 'COMPLETED' : record.status,
+        manual: true,
+        note: record.note ? `${record.note}\n${stamp}` : stamp,
+      },
+    });
+    const clock = (d?: Date | null) => (d ? this.formatTime(d) ?? null : null);
+    this.auditService.record({
+      actorId: actor.id,
+      action: 'UPDATE_ATTENDANCE',
+      entityType: 'attendance',
+      entityId: id,
+      before: { checkIn: clock(record.checkInTime ?? record.arrivalTime), checkOut: clock(record.checkOutTime) },
+      after: { checkIn: clock(updated.checkInTime), checkOut: clock(updated.checkOutTime) },
+      details: `Régularisation : ${reason}`,
+    });
+    return this.toView(this.toEntity(updated));
   }
 
   async cancel(id: string, dto: CancelAttendanceDto) {

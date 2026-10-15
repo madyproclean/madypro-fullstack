@@ -10,6 +10,7 @@ import { StatusPill, StatusTone } from '@/components/ui/StatusPill';
 import { getSupervisorToday } from '@/services/api/supervision.api';
 import { formatSavedAt, loadWithCache } from '@/services/supervisorCache';
 import { OfflineBanner } from '@/components/supervisor/OfflineBanner';
+import { DaySummarySheet } from '@/components/supervisor/DaySummarySheet';
 import { SupervisorToday, TodayTask } from '@/types/supervision';
 import { SupervisorTabParamList } from '@/navigation/types';
 
@@ -50,6 +51,7 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
   const [data, setData] = useState<SupervisorToday | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const inFlight = useRef(false);
 
   const load = useCallback(
@@ -195,6 +197,14 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
           {data ? <Text style={styles.updated}>Mis à jour à {formatSavedAt(data.generatedAt)}</Text> : null}
           <Pressable
             accessibilityRole="button"
+            onPress={() => setShowSummary(true)}
+            style={({ pressed }) => [styles.summaryButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="stats-chart-outline" size={20} color="#fff" />
+            <Text style={styles.summaryLabel}>Bilan du jour</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Actualiser"
             onPress={() => load(true)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
@@ -205,6 +215,14 @@ export default function SupervisorTodayScreen({ navigation }: Props) {
       </View>
 
       <OfflineBanner />
+      <DaySummarySheet
+        visible={showSummary}
+        onClose={() => setShowSummary(false)}
+        onOpenMission={(id) => {
+          setShowSummary(false);
+          navigation.navigate('SupervisorMissions', { interventionId: id });
+        }}
+      />
       {error ? (
         <View accessibilityRole="alert" style={styles.errorBanner}>
           <Ionicons name="cloud-offline-outline" size={20} color={theme.colors.status.absent} />
@@ -340,6 +358,16 @@ const styles = StyleSheet.create({
   title: { fontFamily: theme.fonts.display, fontSize: 32, color: theme.colors.ink },
   subtitle: { fontFamily: theme.fonts.body, fontSize: 16, color: theme.colors.muted },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  summaryButton: {
+    minHeight: 48,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: theme.colors.primaryDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  summaryLabel: { fontFamily: theme.fonts.bodySemiBold, fontSize: 16, color: '#fff' },
   updated: { fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted },
   iconButton: {
     width: 48,

@@ -77,6 +77,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           });
         } else if (payload.absenceId) {
           navigationRef.navigate('Supervisor', { screen: 'SupervisorValidations', params: { absenceId: payload.absenceId } });
+        } else if (payload.path === 'requests') {
+          navigationRef.navigate('Supervisor', { screen: 'SupervisorValidations', params: { tab: 'requests' } });
         } else if (payload.threadUserId) {
           navigationRef.navigate('Supervisor', { screen: 'SupervisorMessages', params: { threadUserId: payload.threadUserId } });
         } else {

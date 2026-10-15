@@ -14,6 +14,10 @@ import {
   TemplateStop,
   TemplateImpact,
   DayOccurrence,
+  DaySummary,
+  SiteHistory,
+  QualityOverview,
+  QualityItem,
   SiteQrCode,
   SupervisedSite,
   TeamAgent,
@@ -229,5 +233,62 @@ export function saveSiteTemplate(token: string, templateId: string | null, input
       method: templateId ? 'PATCH' : 'POST',
       body: JSON.stringify(templateId ? { label: input.label, stops } : { ...input, stops }),
     },
+  });
+}
+
+// ---------------------------------------------------------------- bilan, historique, qualité
+
+/** Validation groupée : chaque mission en ordre passe en « Terminée », les autres reviennent avec la raison. */
+export function validateMissions(token: string, ids: string[]) {
+  return apiFetch<{ validated: string[]; refused: Array<{ id: string; siteName?: string; reason: string }> }>({
+    path: '/interventions/validate-batch',
+    token,
+    options: { method: 'POST', body: JSON.stringify({ ids }) },
+  });
+}
+
+export function getDaySummary(token: string, date?: string) {
+  return apiFetch<DaySummary>({ path: `/supervision/day-summary${date ? `?date=${date}` : ''}`, token });
+}
+
+export function getSiteHistory(token: string, siteId: string) {
+  return apiFetch<SiteHistory>({ path: `/supervision/sites/${encodeURIComponent(siteId)}/history`, token });
+}
+
+export function getQualityOverview(token: string) {
+  return apiFetch<QualityOverview>({ path: '/supervision/quality', token });
+}
+
+export function createSiteInspection(
+  token: string,
+  siteId: string,
+  input: { items: QualityItem[]; comment?: string; photos?: string[] },
+) {
+  return apiFetch<{ id: string; score: number }>({
+    path: `/supervision/sites/${encodeURIComponent(siteId)}/inspections`,
+    token,
+    options: { method: 'POST', body: JSON.stringify(input) },
+  });
+}
+
+/** Message envoyé à chaque agent rattaché au site (gabarit et missions récentes). */
+export function messageSiteTeam(token: string, siteId: string, body: string) {
+  return apiFetch<{ siteName: string; recipients: Array<{ id: string; name: string }> }>({
+    path: `/chat/sites/${encodeURIComponent(siteId)}/broadcast`,
+    token,
+    options: { method: 'POST', body: JSON.stringify({ body }) },
+  });
+}
+
+/** Correction d'un pointage oublié ou erroné, motif obligatoire (heures HH:MM). */
+export function regularizeAttendance(
+  token: string,
+  attendanceId: string,
+  input: { checkInTime?: string; checkOutTime?: string; reason: string },
+) {
+  return apiFetch<MissionAttendance>({
+    path: `/attendance/${encodeURIComponent(attendanceId)}/regularize`,
+    token,
+    options: { method: 'POST', body: JSON.stringify(input) },
   });
 }

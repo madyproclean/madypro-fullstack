@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -82,6 +82,37 @@ export class ChatService {
     // agents ont un token push mobile), le flux SSE est donc le seul canal de mise à jour live.
     this.realtime.broadcast('chat.message', { threadUserId, senderId, id: message.id });
     return message;
+  }
+
+  /**
+   * Message à toute l'équipe d'un site : les agents prévus au gabarit du site et ceux venus sur
+   * le site ces 30 derniers jours reçoivent le message dans leur conversation.
+   */
+  async broadcastToSite(siteId: string, senderId: string, senderRole: string, body: string) {
+    const site = await this.prisma.site.findUnique({
+      where: { id: siteId },
+      select: { name: true, interventionTemplate: { select: { stops: { select: { agentIds: true } } } } },
+    });
+    if (!site) throw new NotFoundException('Site introuvable');
+    const since = new Date(Date.now() - 30 * 86_400_000);
+    const recent = await this.prisma.interventionAssignment.findMany({
+      where: { intervention: { siteId, date: { gte: since } } },
+      select: { userId: true },
+    });
+    const agentIds = new Set<string>([
+      ...(site.interventionTemplate?.stops.flatMap((s) => s.agentIds) ?? []),
+      ...recent.map((r) => r.userId),
+    ]);
+    const recipients = [...agentIds].filter((id) => {
+      const user = this.usersService.findOne(id);
+      return user && user.role === 'AGENT' && user.active !== false;
+    });
+    if (!recipients.length) throw new BadRequestException("Aucun agent n'est rattaché à ce site");
+    const text = `[${site.name}] ${body.trim()}`;
+    for (const agentId of recipients) {
+      await this.sendMessage(agentId, senderId, senderRole, text);
+    }
+    return { siteName: site.name, recipients: recipients.map((id) => ({ id, name: this.usersService.findOne(id)?.name ?? '' })) };
   }
 
   async markRead(threadUserId: string, readerId: string) {

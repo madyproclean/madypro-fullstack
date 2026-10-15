@@ -11,6 +11,7 @@ import { ActionButton, DetailSection, detailStyles as styles, InfoLine } from '.
 import { callPhone, openDirections, sendSms } from './contact';
 import { ANOMALY_LABELS, formatDayShort, toISODate } from './format';
 import { TemplateEditorSheet } from './TemplateEditorSheet';
+import { QualityInspectionSheet, SiteHistorySheet, SiteMessageSheet } from './SiteSheets';
 
 const MISSION_STATUS: Record<string, string> = {
   PLANNED: 'À venir',
@@ -45,6 +46,7 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
   const [qrLoading, setQrLoading] = useState(false);
   const [openChecklist, setOpenChecklist] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [sheet, setSheet] = useState<'history' | 'quality' | 'message' | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -127,6 +129,12 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
           />
         </View>
         {actionError ? <Text accessibilityRole="alert" style={styles.errorText}>{actionError}</Text> : null}
+
+        <View style={styles.actions}>
+          <ActionButton label="Écrire à l’équipe" icon="megaphone-outline" onPress={() => setSheet('message')} />
+          <ActionButton label="Contrôle qualité" icon="ribbon-outline" onPress={() => setSheet('quality')} />
+          <ActionButton label="Historique" icon="time-outline" onPress={() => setSheet('history')} />
+        </View>
 
         <DetailSection title="Gabarit du site">
           <Text style={styles.muted}>
@@ -278,6 +286,9 @@ export const SiteFileDetail: React.FC<Props> = ({ siteId, onOpenAgent, onOpenMis
         </DetailSection>
       </ScrollView>
       <TemplateEditorSheet visible={editingTemplate} siteId={file.id} onClose={() => setEditingTemplate(false)} />
+      <SiteHistorySheet siteId={sheet === 'history' ? file.id : null} siteName={file.name} onClose={() => setSheet(null)} />
+      <QualityInspectionSheet siteId={sheet === 'quality' ? file.id : null} siteName={file.name} onClose={() => setSheet(null)} />
+      <SiteMessageSheet siteId={sheet === 'message' ? file.id : null} siteName={file.name} onClose={() => setSheet(null)} />
     </View>
   );
 };

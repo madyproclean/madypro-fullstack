@@ -8,6 +8,7 @@ import { Intervention } from '../../types/intervention';
 import { Site } from '../../types/site';
 import { formatDateTime } from '../../utils/datetime';
 import { Badge } from '../../components/ui/Badge';
+import { DaySummaryPanel } from '../../components/supervision/DaySummaryPanel';
 import { PageHeader } from '../../components/ui/PageHeader';
 
 const todayISO = new Date().toISOString().slice(0, 10);
@@ -96,6 +97,8 @@ export const SupervisorDashboardPage: React.FC = () => {
           <p className="card__meta">{loading ? 'Chargement...' : 'Mise à jour jour J'}</p>
         </article>
       </div>
+
+      <DaySummaryPanel missionsPath="/supervision/interventions" />
 
       <div className="panel" style={{ marginTop: '1rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

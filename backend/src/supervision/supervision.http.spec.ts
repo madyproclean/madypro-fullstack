@@ -7,6 +7,7 @@ import { SettingsService } from '../settings/settings.service';
 import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 import { SupervisionController } from './supervision.controller';
 import { SupervisionService } from './supervision.service';
+import { SupervisionInsightsService } from './supervision-insights.service';
 import { SupervisionDirectoryService } from './supervision-directory.service';
 import { ChatController } from '../chat/chat.controller';
 import { ChatService } from '../chat/chat.service';
@@ -89,6 +90,7 @@ describe('Routes de la tablette superviseur (HTTP)', () => {
       providers: [
         SupervisionService,
         SupervisionDirectoryService,
+        SupervisionInsightsService,
         ChatService,
         SupervisorScopeService,
         { provide: PrismaService, useValue: prisma },

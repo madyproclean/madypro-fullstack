@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateManualAttendanceDto } from './dto/create-manual.dto';
+import { RegularizeAttendanceDto } from './dto/regularize-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { CancelAttendanceDto } from './dto/cancel-attendance.dto';
 import { MarkArrivalDto } from './dto/mark-arrival.dto';
@@ -87,6 +88,14 @@ export class AttendanceController {
     await this.loadInScope(req, id);
     const actorId = req.user?.sub ?? req.user?.id ?? 'unknown';
     return this.service.update(id, dto, actorId);
+  }
+
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Post(':id/regularize')
+  async regularize(@Req() req: any, @Param('id') id: string, @Body() dto: RegularizeAttendanceDto) {
+    await this.loadInScope(req, id);
+    const actorId = req.user?.sub ?? req.user?.id;
+    return this.service.regularize(id, dto, { id: actorId });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')

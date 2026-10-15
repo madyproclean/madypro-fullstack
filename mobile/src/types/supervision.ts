@@ -293,3 +293,52 @@ export type SitePrestation = {
   active: boolean;
   category: { id: string; label: string };
 };
+
+/** Bilan de fin de journée du superviseur. */
+export type DaySummary = {
+  date: string;
+  generatedAt: string;
+  missions: { total: number; completed: number; toValidate: number; inProgress: number; notDone: number; upcoming: number; cancelled: number };
+  punctuality: { arrivals: number; late: number; onTimeRate: number | null };
+  hours: { planned: number; worked: number };
+  late: Array<{ agentName: string; siteName: string; startTime: string; minutesLate: number }>;
+  toValidate: Array<{ interventionId: string; siteName: string; startTime: string; endTime: string }>;
+  notDone: Array<{ interventionId: string; siteName: string; startTime: string; agents: string[] }>;
+  anomalies: Array<{ id: string; siteName: string; title: string; description: string; status: 'NEW' | 'RESOLVED'; agentName: string }>;
+  anomalyCount: { total: number; open: number };
+  absences: Array<{ agentName: string; type: string }>;
+};
+
+export type QualityRating = 'GOOD' | 'AVERAGE' | 'POOR';
+export type QualityItem = { label: string; rating: QualityRating; comment?: string };
+export type QualityInspection = {
+  id: string;
+  createdAt: string;
+  score: number;
+  items: QualityItem[];
+  comment: string | null;
+  photos: string[];
+  inspectorName: string;
+};
+export type QualityOverview = {
+  criteria: string[];
+  sites: Array<{ siteId: string; siteName: string; inspections: number; average: number; lastScore: number; lastAt: string }>;
+};
+
+/** Dernières missions et contrôles qualité d'un site. */
+export type SiteHistory = {
+  site: { id: string; name: string };
+  missions: Array<{
+    id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    prestation: string | null;
+    agents: string[];
+    observation: string | null;
+    photoCount: number;
+    anomalies: Array<{ id: string; title: string; status: string }>;
+  }>;
+  inspections: QualityInspection[];
+};

@@ -51,6 +51,15 @@ export default function SupervisorValidationsScreen({ route, navigation }: Props
     }
   }, [requestedId, navigation]);
 
+  // Décision de l'administrateur sur une demande (notification) : ouvre « Mes demandes ».
+  const requestedTab = route.params?.tab;
+  useEffect(() => {
+    if (requestedTab === 'requests') {
+      setTab('requests');
+      navigation.setParams({ tab: undefined });
+    }
+  }, [requestedTab, navigation]);
+
   const load = useCallback(async () => {
     if (!token || inFlight.current) return;
     inFlight.current = true;

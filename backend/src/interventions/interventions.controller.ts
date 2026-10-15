@@ -111,6 +111,27 @@ export class InterventionsController {
     return this.service.getPlanning({ startDate, endDate, agentId, siteId, siteIds });
   }
 
+  /** Validation groupée des missions à valider (superviseur), sur ses seuls sites. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @Post('validate-batch')
+  async validateBatch(@Body('ids') ids: string[], @Req() req: Request) {
+    if (!Array.isArray(ids) || !ids.length) throw new BadRequestException('Aucune mission sélectionnée');
+    const user = req.user as any;
+    const allowed: string[] = [];
+    const outOfScope: { id: string; reason: string }[] = [];
+    for (const id of ids) {
+      try {
+        await this.scope.assertIntervention(user, id);
+        allowed.push(id);
+      } catch {
+        outOfScope.push({ id, reason: 'Hors de vos sites' });
+      }
+    }
+    const result = await this.service.validateMany(allowed, { id: user.sub, role: user.role });
+    return { ...result, refused: [...result.refused, ...outOfScope] };
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('intervention'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get(':id')
