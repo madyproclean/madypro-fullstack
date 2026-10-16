@@ -2169,6 +2169,47 @@ export class InterventionsService implements OnModuleInit {
         const longWeek = [...perWeek.entries()].find(([, m]) => m > 48 * 60);
         if (longWeek) warnings.push(`${agentName(agentId)} serait prévu ${Math.round(longWeek[1] / 6) / 10} h la semaine du ${longWeek[0]} (plus de 48 h).`);
       }
+      // Trajet : deux missions qui se suivent sur des sites différents, sans le temps d'y aller.
+      const siteIds = [...new Set([siteId, ...others.map((o) => o.siteId)])];
+      const coords = new Map(
+        (
+          await this.prisma.site.findMany({
+            where: { id: { in: siteIds } },
+            select: { id: true, name: true, latitude: true, longitude: true },
+          })
+        ).map((s) => [s.id, s]),
+      );
+      const toMin = (hhmm: string) => {
+        const [h, m] = hhmm.split(':').map(Number);
+        return h * 60 + m;
+      };
+      for (const agentId of agentIds) {
+        const mine = [...proposed.map((o) => ({ ...o, siteId })), ...others]
+          .filter((o) => o.agentIds.includes(agentId))
+          .sort((a, b) => (a.date === b.date ? toMin(a.startTime) - toMin(b.startTime) : a.date < b.date ? -1 : 1));
+        for (let i = 1; i < mine.length; i++) {
+          const prev = mine[i - 1];
+          const next = mine[i];
+          if (prev.date !== next.date || prev.siteId === next.siteId) continue;
+          if (prev.siteId !== siteId && next.siteId !== siteId) continue;
+          const from = coords.get(prev.siteId);
+          const to = coords.get(next.siteId);
+          if (from?.latitude == null || from.longitude == null || to?.latitude == null || to.longitude == null) continue;
+          const km = haversineDistanceMeters(
+            { latitude: from.latitude, longitude: from.longitude },
+            { latitude: to.latitude, longitude: to.longitude },
+          ) / 1000;
+          // Estimation prudente en ville : 25 km/h, plus 10 minutes pour se garer et entrer.
+          const needed = Math.round((km / 25) * 60) + 10;
+          const gap = toMin(next.startTime) - toMin(prev.endTime);
+          if (gap < needed) {
+            warnings.push(
+              `${agentName(agentId)} : le ${next.date}, ${gap <= 0 ? 'aucun temps' : `${gap} min seulement`} entre ${from.name} (fin ${prev.endTime}) et ${to.name} (début ${next.startTime}), alors qu'il faut environ ${needed} min de trajet.`,
+            );
+            break;
+          }
+        }
+      }
     }
     return {
       period: { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) },
