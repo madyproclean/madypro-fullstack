@@ -143,6 +143,63 @@ export class InvoicesService implements OnModuleInit {
     return this.present(invoice);
   }
 
+  /**
+   * Prépare la facture du mois d'un site en brouillon : une ligne par prestation, quantité = passages
+   * facturables réalisés, prix = prix du passage renseigné sur la prestation du site (0 sinon, à
+   * compléter). Rien n'est envoyé : l'administrateur relit puis envoie lui-même.
+   */
+  async draftFromMissions(siteId: string, month: string, actorId: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month ?? '')) throw new BadRequestException('Mois attendu au format AAAA-MM');
+    const site = await this.prisma.site.findUnique({
+      where: { id: siteId },
+      include: { categories: { include: { category: { select: { label: true } } } } },
+    });
+    if (!site) throw new NotFoundException('Site introuvable');
+    const [year, m] = month.split('-').map(Number);
+    const missions = await this.prisma.intervention.findMany({
+      where: {
+        siteId,
+        billable: true,
+        status: { in: ['COMPLETED', 'NEEDS_REVIEW'] },
+        date: { gte: new Date(Date.UTC(year, m - 1, 1)), lte: new Date(Date.UTC(year, m, 0, 23, 59, 59)) },
+      },
+      select: { categoryId: true, subType: true },
+    });
+    if (!missions.length) throw new BadRequestException('Aucun passage facturable réalisé sur ce mois');
+    const groups = new Map<string, { label: string; count: number; price: number | null }>();
+    for (const mission of missions) {
+      const offer = site.categories.find((c) => c.categoryId === mission.categoryId);
+      const key = mission.categoryId ?? `autre:${mission.subType ?? ''}`;
+      const entry = groups.get(key) ?? { label: offer?.category.label ?? mission.subType ?? 'Prestation', count: 0, price: offer?.unitPriceHT ?? null };
+      entry.count += 1;
+      groups.set(key, entry);
+    }
+    const monthLabel = new Date(Date.UTC(year, m - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const missingPrices = [...groups.values()].filter((g) => g.price === null).map((g) => g.label);
+    const due = new Date(Date.UTC(year, m, 0));
+    due.setUTCDate(due.getUTCDate() + 30);
+    return this.create(
+      {
+        siteId,
+        label: `Prestations de nettoyage — ${monthLabel}`,
+        clientName: site.contactName || site.name,
+        clientAddress: site.address,
+        clientEmail: site.contactEmail ?? undefined,
+        dueAt: due.toISOString(),
+        notes: missingPrices.length
+          ? `Prix à compléter pour : ${missingPrices.join(', ')} (aucun prix de passage renseigné sur le site).`
+          : undefined,
+        lineItems: [...groups.values()].map((g) => ({
+          description: `${g.label} — ${g.count} passage${g.count > 1 ? 's' : ''} (${monthLabel})`,
+          quantity: g.count,
+          unitPriceHT: g.price ?? 0,
+          vatRatePercent: 20,
+        })),
+      } as CreateInvoiceDto,
+      actorId,
+    );
+  }
+
   private async ensureEditable(id: string) {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) {

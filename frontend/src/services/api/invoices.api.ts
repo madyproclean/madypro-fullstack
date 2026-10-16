@@ -72,3 +72,12 @@ export async function deleteInvoice(token: string, id: string) {
     options: { method: 'DELETE' },
   });
 }
+
+/** Brouillon de facture du mois d'un site, à partir des passages réalisés (rien n'est envoyé). */
+export async function draftInvoiceFromMissions(token: string, siteId: string, month: string) {
+  return apiFetch<Invoice>({
+    path: 'invoices/from-missions',
+    token,
+    options: { method: 'POST', body: JSON.stringify({ siteId, month }) },
+  });
+}

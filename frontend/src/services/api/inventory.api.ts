@@ -27,12 +27,25 @@ export async function createInventoryItem(token: string, payload: CreateInventor
   });
 }
 
-export async function adjustInventoryItem(token: string, id: string, delta: number) {
+export async function adjustInventoryItem(token: string, id: string, delta: number, reason?: string) {
   return apiFetch<InventoryItem>({
     path: `inventory/${id}/adjust`,
     token,
-    options: { method: 'PATCH', body: JSON.stringify({ delta }) },
+    options: { method: 'PATCH', body: JSON.stringify({ delta, ...(reason ? { reason } : {}) }) },
   });
+}
+
+export type InventoryMovement = {
+  id: string;
+  delta: number;
+  quantityAfter: number;
+  reason: string | null;
+  userName: string | null;
+  createdAt: string;
+};
+
+export async function listInventoryMovements(token: string, id: string) {
+  return apiFetch<InventoryMovement[]>({ path: `inventory/${id}/movements`, token });
 }
 
 export async function deleteInventoryItem(token: string, id: string) {

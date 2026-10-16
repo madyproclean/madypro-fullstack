@@ -35,6 +35,7 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { FormsModule } from './forms/forms.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { CategoriesModule } from './categories/categories.module';
+import { InboxModule } from './inbox/inbox.module';
 import { SupervisionModule } from './supervision/supervision.module';
 
 @Module({
@@ -75,6 +76,7 @@ import { SupervisionModule } from './supervision/supervision.module';
     FormsModule,
     CategoriesModule,
     SupervisionModule,
+    InboxModule,
   ],
   controllers: [AppController],
 })

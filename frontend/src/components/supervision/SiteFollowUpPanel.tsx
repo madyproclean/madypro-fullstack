@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Send } from 'lucide-react';
+import { Check, FileText, Send } from 'lucide-react';
+import { openPdfInNewTab } from '../../utils/downloadPdf';
 import { useAuthContext } from '../../context/AuthContext';
 import {
   createSiteInspection,
@@ -40,6 +41,17 @@ export const SiteFollowUpPanel: React.FC<{ siteId: string }> = ({ siteId }) => {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [reportMonth, setReportMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const openReport = () => {
+    if (!token) return;
+    openPdfInNewTab(token, `reports/client-report/pdf?siteId=${siteId}&month=${reportMonth}`).catch((err) =>
+      notify(err instanceof Error ? err.message : 'Compte rendu indisponible', 'error'),
+    );
+  };
 
   const load = () => {
     if (!token) return;
@@ -89,6 +101,23 @@ export const SiteFollowUpPanel: React.FC<{ siteId: string }> = ({ siteId }) => {
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
+      <div className="panel" style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <h3 style={{ marginTop: 0 }}>Compte rendu pour le client</h3>
+          <p className="card__meta" style={{ margin: 0 }}>
+            Passages du mois avec horaires réels, checklists, incidents, contrôles qualité et photos. Le PDF s’ouvre : rien n’est
+            envoyé au client.
+          </p>
+        </div>
+        <label className="filter-field">
+          Mois
+          <input type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
+        </label>
+        <Button type="button" icon={FileText} onClick={openReport} disabled={!reportMonth}>
+          Ouvrir le PDF
+        </Button>
+      </div>
+
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>Écrire à l’équipe du site</h3>
         <p className="card__meta">Chaque agent qui travaille sur ce site reçoit le message dans sa messagerie.</p>

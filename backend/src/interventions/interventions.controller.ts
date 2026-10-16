@@ -289,6 +289,41 @@ export class InterventionsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
+  @Get('templates/:id/pauses')
+  async listTemplatePauses(@Param('id') id: string, @Req() req: Request) {
+    await this.assertTemplateInScope(req, id);
+    return this.service.listTemplatePauses(id);
+  }
+
+  /** Période sans passage (fermeture) : réservé à l'administrateur. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Post('templates/:id/pauses')
+  addTemplatePause(@Param('id') id: string, @Body() dto: { from: string; to: string; reason?: string }, @Req() req: Request) {
+    return this.service.addTemplatePause(id, dto, (req.user as any).sub);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Delete('templates/:id/pauses/:pauseId')
+  deleteTemplatePause(@Param('id') id: string, @Param('pauseId') pauseId: string, @Req() req: Request) {
+    return this.service.deleteTemplatePause(id, pauseId, (req.user as any).sub);
+  }
+
+  /** Copie les créneaux d'un gabarit vers un autre site (sans agents). */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Post('templates/:id/duplicate')
+  async duplicateTemplate(@Param('id') id: string, @Body('siteId') siteId: string, @Req() req: Request) {
+    if (!siteId) throw new BadRequestException('Site cible manquant');
+    await this.assertTemplateInScope(req, id);
+    const user = req.user as any;
+    await this.scope.assertSite(user, siteId);
+    return this.service.duplicateTemplate(id, siteId, user.sub, user.role);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
   @Patch('templates/:id/toggle')
   async toggleTemplate(@Param('id') id: string, @Body('active') active: boolean, @Req() req: Request) {
     await this.assertTemplateInScope(req, id);

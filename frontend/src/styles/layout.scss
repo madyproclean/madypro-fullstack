@@ -1,11 +1,13 @@
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  /* minmax(0, 1fr) : un grand tableau défile dans son cadre au lieu d'élargir toute la page. */
+  grid-template-columns: 260px minmax(0, 1fr);
   position: relative;
 }
 
 .app-shell__content {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   padding: 2rem;

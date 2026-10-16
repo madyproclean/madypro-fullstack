@@ -14,7 +14,7 @@ export function parisDateTime(dateStr: string, time: string): Date {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   });
   const parisAsUtc = new Date(`${parisString.replace(',', '')} UTC`);
   return new Date(guessUtc.getTime() + (guessUtc.getTime() - parisAsUtc.getTime()));

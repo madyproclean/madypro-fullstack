@@ -33,6 +33,12 @@ export class InvoicesController {
     res.send(buffer);
   }
 
+  /** Brouillon de facture du mois à partir des passages réalisés (jamais envoyé automatiquement). */
+  @Post('from-missions')
+  draftFromMissions(@Body('siteId') siteId: string, @Body('month') month: string, @Req() req: any) {
+    return this.invoicesService.draftFromMissions(siteId, month, req.user.sub);
+  }
+
   @Post()
   create(@Body() dto: CreateInvoiceDto, @Req() req: any) {
     return this.invoicesService.create(dto, req.user.sub);

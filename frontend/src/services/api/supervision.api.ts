@@ -76,3 +76,49 @@ export const validateMissions = (token: string, ids: string[]) =>
 
 export const regularizeAttendance = (token: string, id: string, input: { checkInTime?: string; checkOutTime?: string; reason: string }) =>
   apiFetch<unknown>({ path: `attendance/${id}/regularize`, token, options: { method: 'POST', body: JSON.stringify(input) } });
+
+export type InboxItem = {
+  id: string;
+  kind: 'APPROVAL' | 'ABSENCE' | 'ANOMALY' | 'MISSION_TO_VALIDATE' | 'LOW_STOCK' | 'INVOICE_OVERDUE' | 'CERTIFICATION';
+  urgency: 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  detail: string;
+  date: string;
+  link: string;
+};
+export type Inbox = { total: number; high: number; counts: Record<string, number>; items: InboxItem[] };
+
+export const getAdminInbox = (token: string) => apiFetch<Inbox>({ path: 'admin/inbox', token });
+
+type Totals = { missions: number; done: number; missed: number; completionRate: number | null; onTimeRate: number | null };
+export type Steering = {
+  period: { startDate: string; endDate: string; days: number };
+  current: Totals;
+  previous: Totals;
+  agents: {
+    agentId: string;
+    agentName: string;
+    missions: number;
+    done: number;
+    missed: number;
+    late: number;
+    onTimeRate: number | null;
+    plannedHours: number;
+    workedHours: number;
+    corrections: number;
+  }[];
+  sites: {
+    siteId: string;
+    siteName: string;
+    missions: number;
+    done: number;
+    missed: number;
+    completionRate: number | null;
+    anomalies: number;
+    plannedHours: number;
+    workedHours: number;
+    quality: number | null;
+  }[];
+};
+
+export const getSteering = (token: string, days: number) => apiFetch<Steering>({ path: `supervision/steering?days=${days}`, token });

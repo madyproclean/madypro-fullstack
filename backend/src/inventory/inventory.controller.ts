@@ -43,7 +43,14 @@ export class InventoryController {
   @Patch(':id/adjust')
   async adjustQuantity(@Req() req: any, @Param('id') id: string, @Body() dto: AdjustInventoryItemDto) {
     await this.scope.assertSite(req.user, await this.inventoryService.getSiteId(id));
-    return this.inventoryService.adjustQuantity(id, dto.delta);
+    return this.inventoryService.adjustQuantity(id, dto.delta, { id: req.user?.sub, reason: dto.reason });
+  }
+
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Get(':id/movements')
+  async movements(@Req() req: any, @Param('id') id: string) {
+    await this.scope.assertSite(req.user, await this.inventoryService.getSiteId(id));
+    return this.inventoryService.movements(id);
   }
 
   @Roles('ADMIN', 'SUPERVISOR')

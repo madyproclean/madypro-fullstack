@@ -146,6 +146,7 @@ export type CreateTemplatePayload = {
   startDate?: string;
   endDate?: string;
   active?: boolean;
+  skipHolidays?: boolean;
 };
 
 export type UpdateTemplatePayload = Partial<CreateTemplatePayload>;
@@ -306,5 +307,33 @@ export async function deleteTemplateException(token: string, id: string, excepti
     path: `interventions/templates/${id}/exceptions/${exceptionId}`,
     token,
     options: { method: 'DELETE' },
+  });
+}
+
+export type TemplatePause = { id: string; from: string; to: string; reason: string | null; createdByName: string | null };
+
+export async function listTemplatePauses(token: string, id: string) {
+  return apiFetch<TemplatePause[]>({ path: `interventions/templates/${id}/pauses`, token });
+}
+
+/** Période sans passage (fermeture) : les missions prévues sur la période sont annulées. */
+export async function addTemplatePause(token: string, id: string, payload: { from: string; to: string; reason?: string }) {
+  return apiFetch<TemplatePause & { cancelledMissions: number }>({
+    path: `interventions/templates/${id}/pauses`,
+    token,
+    options: { method: 'POST', body: JSON.stringify(payload) },
+  });
+}
+
+export async function deleteTemplatePause(token: string, id: string, pauseId: string) {
+  return apiFetch<{ ok: boolean }>({ path: `interventions/templates/${id}/pauses/${pauseId}`, token, options: { method: 'DELETE' } });
+}
+
+/** Copie les créneaux d'un gabarit vers un autre site (sans les agents). */
+export async function duplicateTemplate(token: string, id: string, siteId: string) {
+  return apiFetch<InterventionTemplate>({
+    path: `interventions/templates/${id}/duplicate`,
+    token,
+    options: { method: 'POST', body: JSON.stringify({ siteId }) },
   });
 }

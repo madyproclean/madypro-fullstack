@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /** `siteIds` restreint au périmètre d'un superviseur ; un site explicite hors périmètre ne renvoie rien. */
   findAll(siteId?: string, siteIds: string[] | null = null) {
@@ -53,7 +57,18 @@ export class InventoryService {
     });
   }
 
-  async adjustQuantity(id: string, delta: number) {
+  /** Derniers mouvements d'un article, avec leur auteur. */
+  async movements(id: string) {
+    const rows = await this.prisma.inventoryMovement.findMany({ where: { itemId: id }, orderBy: { createdAt: 'desc' }, take: 50 });
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: rows.map((r) => r.userId).filter((u): u is string => !!u) } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const name = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
+    return rows.map((r) => ({ ...r, userName: r.userId ? name.get(r.userId) ?? null : null }));
+  }
+
+  async adjustQuantity(id: string, delta: number, actor?: { id?: string; reason?: string }) {
     // Compare-and-swap sur la quantité observée : deux ajustements concurrents (deux agents qui
     // scannent le même article) ne doivent jamais s'écraser l'un l'autre (lecture-puis-écriture
     // naïve perdrait silencieusement un décrément).
@@ -68,6 +83,20 @@ export class InventoryService {
         data: { quantity: nextQuantity },
       });
       if (result.count > 0) {
+        await this.prisma.inventoryMovement.create({
+          data: { itemId: id, delta, quantityAfter: nextQuantity, userId: actor?.id ?? null, reason: actor?.reason?.trim() || null },
+        });
+        // Passage sous le seuil : les superviseurs du site sont prévenus une fois.
+        if (existing.quantity > existing.minThreshold && nextQuantity <= existing.minThreshold) {
+          const site = await this.prisma.site.findUnique({ where: { id: existing.siteId }, select: { name: true } });
+          await this.notifications
+            .notifySiteSupervisors([existing.siteId], {
+              title: 'Stock bas',
+              message: `${site?.name ?? 'Site'} : ${existing.name} — reste ${nextQuantity} ${existing.unit} (seuil ${existing.minThreshold}).`,
+              category: 'inventory',
+            })
+            .catch(() => undefined);
+        }
         return this.prisma.inventoryItem.findUniqueOrThrow({ where: { id } });
       }
     }

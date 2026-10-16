@@ -85,6 +85,9 @@ export type PayrollBreakdownRow = {
   nightHours: number;
   sundayHours: number;
   holidayHours: number;
+  totalHours?: number;
+  /** Heures au-delà de 35 h par semaine (comprises dans le total). */
+  overtimeHours?: number;
 };
 
 export type PeriodComparison = {

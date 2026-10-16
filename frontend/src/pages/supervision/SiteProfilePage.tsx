@@ -29,6 +29,7 @@ import { formatHour } from '../../utils/datetime';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { SiteFollowUpPanel } from '../../components/supervision/SiteFollowUpPanel';
+import { SiteInventoryPanel } from '../../components/supervision/SiteInventoryPanel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Award, ClipboardCheck, UserX, AlertTriangle } from 'lucide-react';
 
@@ -558,41 +559,7 @@ export const SiteProfilePage: React.FC = () => {
       </TabPanel>
 
       <TabPanel active={activeTab === 'inventory'}>
-      <div className="panel">
-        <h3>Inventaire</h3>
-        <div className="table-wrapper" style={{ marginTop: '0.5rem' }}>
-          <table className="table" aria-label="inventaire site">
-            <thead>
-              <tr>
-                <th>Article</th>
-                <th>Quantité</th>
-                <th>Seuil</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventory.map((item) => {
-                const low = item.quantity <= item.minThreshold;
-                return (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td style={low ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
-                      {item.quantity} {item.unit}
-                    </td>
-                    <td>{item.minThreshold}</td>
-                  </tr>
-                );
-              })}
-              {inventory.length === 0 && (
-                <tr>
-                  <td colSpan={3} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
-                    Aucun article enregistré.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <SiteInventoryPanel items={inventory} onChange={(updated) => setInventory((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))} />
       </TabPanel>
 
       <TabPanel active={activeTab === 'followup'}>

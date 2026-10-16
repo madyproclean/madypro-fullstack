@@ -366,16 +366,17 @@ model SiteContract {
 }
 
 model InventoryItem {
-  id           String   @id @default(cuid())
+  id           String              @id @default(cuid())
   siteId       String
-  site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site         Site                @relation(fields: [siteId], references: [id], onDelete: Cascade)
   name         String
   barcode      String?
-  unit         String   @default("unité")
-  quantity     Int      @default(0)
-  minThreshold Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  unit         String              @default("unité")
+  quantity     Int                 @default(0)
+  minThreshold Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  movements    InventoryMovement[]
 }
 
 model SiteZone {
@@ -402,17 +403,19 @@ model InterventionCategory {
 }
 
 model SiteCategory {
-  id         String                      @id @default(cuid())
-  siteId     String
-  site       Site                        @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  categoryId String
-  category   InterventionCategory        @relation(fields: [categoryId], references: [id])
-  startTime  String
-  endTime    String
-  active     Boolean                     @default(true)
-  createdAt  DateTime                    @default(now())
-  updatedAt  DateTime                    @updatedAt
-  checklist  SiteCategoryChecklistItem[]
+  id          String                      @id @default(cuid())
+  siteId      String
+  site        Site                        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    InterventionCategory        @relation(fields: [categoryId], references: [id])
+  startTime   String
+  endTime     String
+  active      Boolean                     @default(true)
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  checklist   SiteCategoryChecklistItem[]
+  /// Prix HT d'un passage, pour préparer la facture du mois.
+  unitPriceHT Float?
 
   @@unique([siteId, categoryId])
 }
@@ -520,6 +523,23 @@ model InterventionTemplate {
   pendingRequestedAt   DateTime?
   revisions            TemplateRevision[]
   exceptions           TemplateException[]
+  pauses               TemplatePause[]
+  /// Pas de passage les jours fériés (France).
+  skipHolidays         Boolean             @default(false)
+}
+
+/// Période sans passage (fermeture annuelle, travaux, saison) : aucune mission générée.
+model TemplatePause {
+  id          String               @id @default(cuid())
+  templateId  String
+  template    InterventionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  from        DateTime
+  to          DateTime
+  reason      String?
+  createdById String?
+  createdAt   DateTime             @default(now())
+
+  @@index([templateId, from])
 }
 
 /// Photo d'une version appliquée d'un gabarit (historique, retour en arrière).
@@ -913,4 +933,18 @@ model QualityInspection {
   createdAt      DateTime @default(now())
 
   @@index([siteId, createdAt])
+}
+
+/// Mouvement de stock (consommation, réassort, inventaire) avec son auteur.
+model InventoryMovement {
+  id            String        @id @default(cuid())
+  itemId        String
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  delta         Int
+  quantityAfter Int
+  userId        String?
+  reason        String?
+  createdAt     DateTime      @default(now())
+
+  @@index([itemId, createdAt])
 }

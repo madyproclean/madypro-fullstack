@@ -225,6 +225,150 @@ export class SupervisionInsightsService {
     return { id: created.id, score, createdAt: created.createdAt };
   }
 
+  /**
+   * Tableau de pilotage sur une période : par agent et par site, missions faites / non faites,
+   * ponctualité, heures prévues et faites, anomalies, note qualité ; comparaison avec la période
+   * précédente de même durée.
+   */
+  async steering(viewer: Viewer, days = 30, now: Date = new Date()) {
+    const span = Math.min(Math.max(Math.round(days) || 30, 7), 180);
+    const end = parisToday(now);
+    const startDate = new Date(dayStart(end).getTime() - (span - 1) * 86_400_000).toISOString().slice(0, 10);
+    const prevEnd = new Date(dayStart(startDate).getTime() - 86_400_000).toISOString().slice(0, 10);
+    const prevStart = new Date(dayStart(prevEnd).getTime() - (span - 1) * 86_400_000).toISOString().slice(0, 10);
+    const siteIds = await this.scope.siteIds(viewer);
+    const tolerance = this.settings.getSettings().attendanceRules.toleranceMinutes ?? 10;
+
+    const load = (from: string, to: string) =>
+      this.prisma.intervention.findMany({
+        where: { date: { gte: dayStart(from), lte: dayEnd(to) }, status: { not: 'CANCELLED' }, ...(siteIds ? { siteId: { in: siteIds } } : {}) },
+        include: {
+          site: { select: { id: true, name: true, toleranceMinutes: true } },
+          assignments: { include: { user: { select: { id: true, firstName: true, lastName: true } } } },
+          attendances: { select: { userId: true, checkInTime: true, arrivalTime: true, checkOutTime: true, manual: true } },
+          _count: { select: { anomalies: true } },
+        },
+      });
+    const [current, previous, inspections] = await Promise.all([
+      load(startDate, end),
+      load(prevStart, prevEnd),
+      this.prisma.qualityInspection.findMany({
+        where: { createdAt: { gte: dayStart(startDate) }, ...(siteIds ? { siteId: { in: siteIds } } : {}) },
+        select: { siteId: true, score: true },
+      }),
+    ]);
+
+    const isDone = (status: string) => status === 'COMPLETED' || status === 'NEEDS_REVIEW';
+    const isMissed = (i: { status: string; date: Date; endTime: string }) =>
+      i.status === 'NO_SHOW' || (i.status === 'PLANNED' && now.getTime() > parisDateTime(i.date.toISOString().slice(0, 10), i.endTime).getTime());
+
+    const totals = (list: typeof current) => {
+      let arrivals = 0;
+      let late = 0;
+      let done = 0;
+      let missed = 0;
+      for (const i of list) {
+        if (isDone(i.status)) done += 1;
+        else if (isMissed(i)) missed += 1;
+        const planned = parisDateTime(i.date.toISOString().slice(0, 10), i.startTime).getTime();
+        const allowed = (i.site.toleranceMinutes ?? tolerance) * 60_000;
+        for (const a of i.attendances) {
+          const start = a.checkInTime ?? a.arrivalTime;
+          if (!start) continue;
+          arrivals += 1;
+          if (start.getTime() > planned + allowed) late += 1;
+        }
+      }
+      const finished = done + missed;
+      return {
+        missions: list.length,
+        done,
+        missed,
+        completionRate: finished ? Math.round((done / finished) * 100) : null,
+        onTimeRate: arrivals ? Math.round(((arrivals - late) / arrivals) * 100) : null,
+      };
+    };
+
+    type AgentRow = { agentId: string; agentName: string; missions: number; done: number; missed: number; arrivals: number; late: number; plannedMinutes: number; workedMinutes: number; corrections: number };
+    type SiteRow = { siteId: string; siteName: string; missions: number; done: number; missed: number; anomalies: number; plannedMinutes: number; workedMinutes: number };
+    const agents = new Map<string, AgentRow>();
+    const sites = new Map<string, SiteRow>();
+    for (const i of current) {
+      const day = i.date.toISOString().slice(0, 10);
+      const length = minutes(i.startTime, i.endTime);
+      const planned = parisDateTime(day, i.startTime).getTime();
+      const allowed = (i.site.toleranceMinutes ?? tolerance) * 60_000;
+      const site = sites.get(i.site.id) ?? { siteId: i.site.id, siteName: i.site.name, missions: 0, done: 0, missed: 0, anomalies: 0, plannedMinutes: 0, workedMinutes: 0 };
+      site.missions += 1;
+      if (isDone(i.status)) site.done += 1;
+      else if (isMissed(i)) site.missed += 1;
+      site.anomalies += i._count.anomalies;
+      for (const a of i.assignments) {
+        const row = agents.get(a.userId) ?? { agentId: a.userId, agentName: fullName(a.user), missions: 0, done: 0, missed: 0, arrivals: 0, late: 0, plannedMinutes: 0, workedMinutes: 0, corrections: 0 };
+        row.missions += 1;
+        row.plannedMinutes += length;
+        site.plannedMinutes += length;
+        if (isDone(i.status)) row.done += 1;
+        else if (isMissed(i)) row.missed += 1;
+        const att = i.attendances.find((x) => x.userId === a.userId);
+        const start = att?.checkInTime ?? att?.arrivalTime;
+        if (start) {
+          row.arrivals += 1;
+          if (start.getTime() > planned + allowed) row.late += 1;
+          if (att?.checkOutTime) {
+            const worked = Math.max(0, Math.round((att.checkOutTime.getTime() - start.getTime()) / 60_000));
+            row.workedMinutes += worked;
+            site.workedMinutes += worked;
+          }
+        }
+        if (att?.manual) row.corrections += 1;
+        agents.set(a.userId, row);
+      }
+      sites.set(i.site.id, site);
+    }
+    const quality = new Map<string, number[]>();
+    inspections.forEach((q) => quality.set(q.siteId, [...(quality.get(q.siteId) ?? []), q.score]));
+    const hours = (m: number) => Math.round(m / 6) / 10;
+    const rate = (num: number, den: number) => (den ? Math.round((num / den) * 100) : null);
+
+    return {
+      period: { startDate, endDate: end, days: span },
+      current: totals(current),
+      previous: totals(previous),
+      agents: [...agents.values()]
+        .map((a) => ({
+          agentId: a.agentId,
+          agentName: a.agentName,
+          missions: a.missions,
+          done: a.done,
+          missed: a.missed,
+          late: a.late,
+          onTimeRate: rate(a.arrivals - a.late, a.arrivals),
+          plannedHours: hours(a.plannedMinutes),
+          workedHours: hours(a.workedMinutes),
+          corrections: a.corrections,
+        }))
+        .sort((x, y) => y.missed - x.missed || y.late - x.late || x.agentName.localeCompare(y.agentName)),
+      sites: [...sites.values()]
+        .map((s) => {
+          const scores = quality.get(s.siteId) ?? [];
+          return {
+            siteId: s.siteId,
+            siteName: s.siteName,
+            missions: s.missions,
+            done: s.done,
+            missed: s.missed,
+            completionRate: rate(s.done, s.done + s.missed),
+            anomalies: s.anomalies,
+            plannedHours: hours(s.plannedMinutes),
+            workedHours: hours(s.workedMinutes),
+            quality: scores.length ? Math.round(scores.reduce((n, x) => n + x, 0) / scores.length) : null,
+          };
+        })
+        .sort((x, y) => y.missed - x.missed || x.siteName.localeCompare(y.siteName)),
+    };
+  }
+
   /** Note moyenne par site sur 90 jours, avec la tendance (dernier contrôle vs moyenne). */
   async qualityOverview(viewer: Viewer) {
     const siteIds = await this.scope.siteIds(viewer);

@@ -4,6 +4,7 @@ import { AuthRoutes } from './routes/AuthRoutes';
 import { AdminRoutes } from './routes/AdminRoutes';
 import { SupervisionRoutes } from './routes/SupervisionRoutes';
 import { RoleRedirect } from './routes/RoleRedirect';
+import { ClientPortalPage } from './pages/portal/ClientPortalPage';
 import './styles/index.scss';
 
 export const App: React.FC = () => {
@@ -11,6 +12,7 @@ export const App: React.FC = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<RoleRedirect />} />
+        <Route path="/portail/:token" element={<ClientPortalPage />} />
         {AuthRoutes()}
         {AdminRoutes()}
         {SupervisionRoutes()}

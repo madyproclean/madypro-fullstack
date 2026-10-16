@@ -23,6 +23,12 @@ export class SupervisionController {
     return this.insights.daySummary(req.user, date);
   }
 
+  /** Tableau de pilotage (par agent et par site) sur `days` jours, comparé à la période précédente. */
+  @Get('steering')
+  steering(@Req() req: any, @Query('days') days?: string) {
+    return this.insights.steering(req.user, days ? Number(days) : 30);
+  }
+
   /** Notes qualité moyennes par site (90 jours) et grille de contrôle. */
   @Get('quality')
   qualityOverview(@Req() req: any) {

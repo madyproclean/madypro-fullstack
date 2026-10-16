@@ -21,6 +21,8 @@ export type SiteCategory = {
   startTime: string;
   endTime: string;
   active: boolean;
+  /** Prix HT d'un passage (facture du mois). */
+  unitPriceHT?: number | null;
   checklist: SiteCategoryChecklistItem[];
 };
 

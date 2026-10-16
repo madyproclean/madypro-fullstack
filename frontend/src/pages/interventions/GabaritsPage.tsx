@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Play, Pencil, Power, Check, X, Eye, History, CalendarX } from 'lucide-react';
+import { Plus, Play, Pencil, Power, Check, X, Eye, History, CalendarX, CalendarOff, Copy } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import {
   listTemplates,
@@ -19,6 +19,7 @@ import { InterventionTemplate, TemplatePreview, TemplateAgentSuggestion, Templat
 import { TemplateImpactPanel } from '../../components/interventions/TemplateImpactPanel';
 import { TemplateHistoryModal } from '../../components/interventions/TemplateHistoryModal';
 import { TemplateExceptionsModal } from '../../components/interventions/TemplateExceptionsModal';
+import { TemplateCopyModal, TemplatePausesModal } from '../../components/interventions/TemplatePausesModal';
 import { SiteCategory } from '../../types/category';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
@@ -68,6 +69,7 @@ type FormState = {
   siteId: string;
   startDate: string;
   endDate: string;
+  skipHolidays: boolean;
   stops: StopRow[];
 };
 
@@ -76,6 +78,7 @@ const INITIAL_FORM: FormState = {
   siteId: '',
   startDate: new Date().toISOString().slice(0, 10),
   endDate: '',
+  skipHolidays: false,
   stops: [{ ...EMPTY_STOP }],
 };
 
@@ -130,6 +133,8 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
   const [impact, setImpact] = useState<TemplateImpact | null>(null);
   const [historyFor, setHistoryFor] = useState<InterventionTemplate | null>(null);
   const [exceptionsFor, setExceptionsFor] = useState<InterventionTemplate | null>(null);
+  const [pausesFor, setPausesFor] = useState<InterventionTemplate | null>(null);
+  const [copyFrom, setCopyFrom] = useState<InterventionTemplate | null>(null);
 
   const [generateTemplateId, setGenerateTemplateId] = useState<string | null>(null);
   const [generatePeriod, setGeneratePeriod] = useState<'day' | 'week' | 'custom'>('week');
@@ -204,6 +209,7 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
       siteId: template.siteId,
       startDate: (pending?.startDate ?? template.startDate).slice(0, 10),
       endDate: (pending?.endDate ?? template.endDate) ? (pending?.endDate ?? template.endDate)!.slice(0, 10) : '',
+      skipHolidays: (pending as { skipHolidays?: boolean } | null | undefined)?.skipHolidays ?? template.skipHolidays ?? false,
       stops: stops.length
         ? stops.map((s) => ({
             id: s.id,
@@ -325,6 +331,7 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
           ? new Date(form.startDate).toISOString()
           : undefined,
         endDate: mergeTarget ? mergeTarget.endDate ?? undefined : form.endDate ? new Date(form.endDate).toISOString() : undefined,
+        skipHolidays: mergeTarget ? mergeTarget.skipHolidays : form.skipHolidays,
         stops: [
           ...baseStops,
           ...form.stops.map((s, index) => stopRowToPayload(s, baseStops.length + index)),
@@ -532,6 +539,12 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
                         <Button type="button" variant="ghost" className="btn--compact" icon={History} onClick={() => setHistoryFor(template)}>
                           Historique
                         </Button>
+                        <Button type="button" variant="ghost" className="btn--compact" icon={CalendarOff} onClick={() => setPausesFor(template)}>
+                          Fermetures
+                        </Button>
+                        <Button type="button" variant="ghost" className="btn--compact" icon={Copy} onClick={() => setCopyFrom(template)}>
+                          Copier vers un site
+                        </Button>
                         <Button type="button" variant="ghost" className="btn--compact" icon={Power} onClick={() => handleToggleActive(template)}>
                           {template.active ? 'Désactiver' : 'Activer'}
                         </Button>
@@ -609,6 +622,17 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
                     onChange={(e) => setForm((prev) => ({ ...prev, endDate: e.target.value }))}
                   />
                 </div>
+              )}
+
+              {!mergeTarget && (
+                <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.skipHolidays}
+                    onChange={(e) => setForm((prev) => ({ ...prev, skipHolidays: e.target.checked }))}
+                  />
+                  Pas de passage les jours fériés
+                </label>
               )}
 
               <div className="form-field">
@@ -770,6 +794,13 @@ export const GabaritsPage: React.FC<GabaritsPageProps> = ({ embedded, restrictTo
         onRestored={load}
       />
       <TemplateExceptionsModal template={exceptionsFor} agentOptions={agentOptions} onClose={() => setExceptionsFor(null)} />
+      <TemplatePausesModal template={pausesFor} onClose={() => setPausesFor(null)} />
+      <TemplateCopyModal
+        template={copyFrom}
+        siteOptions={filteredSiteOptions.filter((o) => !templates.some((t) => t.siteId === o.value))}
+        onClose={() => setCopyFrom(null)}
+        onCopied={load}
+      />
 
       <Modal open={Boolean(generateTemplateId)} onClose={() => setGenerateTemplateId(null)} maxWidth={700} labelledBy="gabarit-generate-title">
         <ModalHeader eyebrow="Génération" title={generatingTemplate?.label ?? ''} titleId="gabarit-generate-title" onClose={() => setGenerateTemplateId(null)} />

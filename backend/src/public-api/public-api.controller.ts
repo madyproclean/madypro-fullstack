@@ -1,4 +1,5 @@
-import { Controller, Get, Header, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { PublicApiService } from './public-api.service';
 import { ApiKeyGuard } from '../common/guards/api-key.guard';
@@ -34,6 +35,15 @@ export class PublicApiController {
   @Get('portal/:token')
   getPortalSummary(@Param('token') token: string) {
     return this.publicApiService.getPortalSummary(token);
+  }
+
+  /** Compte rendu mensuel du site, téléchargeable depuis l'espace client. */
+  @Get('portal/:token/report.pdf')
+  async getPortalReport(@Param('token') token: string, @Query('month') month: string, @Res() res: Response) {
+    const { buffer, filename } = await this.publicApiService.getPortalReport(token, month);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
   }
 
   @Get('portal/:token/incidents')

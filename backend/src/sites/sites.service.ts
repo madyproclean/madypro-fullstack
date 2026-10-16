@@ -262,6 +262,7 @@ export class SitesService implements OnModuleInit {
         startTime: dto.startTime,
         endTime: dto.endTime,
         active: dto.active ?? true,
+        unitPriceHT: dto.unitPriceHT ?? null,
       },
       include: { category: true, checklist: true },
     });
@@ -292,6 +293,7 @@ export class SitesService implements OnModuleInit {
         ...(dto.startTime !== undefined ? { startTime: dto.startTime } : {}),
         ...(dto.endTime !== undefined ? { endTime: dto.endTime } : {}),
         ...(dto.active !== undefined ? { active: dto.active } : {}),
+        ...(dto.unitPriceHT !== undefined ? { unitPriceHT: dto.unitPriceHT } : {}),
       },
       include: { category: true, checklist: true },
     });

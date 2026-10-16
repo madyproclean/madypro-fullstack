@@ -74,6 +74,8 @@ export type InterventionTemplate = {
   pendingVersion?: { label?: string; stops?: TemplateStop[] } | null;
   pendingRequestedAt?: string | null;
   pendingRequestedByName?: string | null;
+  /** Pas de passage les jours fériés. */
+  skipHolidays?: boolean;
 };
 
 export type TemplateImpactItem = {

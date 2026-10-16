@@ -30,6 +30,7 @@ import { AuditService } from '../audit/audit.service';
 import { haversineDistanceMeters } from '../common/utils/geo';
 import { checkAssignmentConflicts as checkAssignmentConflictsShared } from '../common/utils/assignment-conflicts.util';
 import { checkAttendanceCompleteness } from './attendance-completeness.util';
+import { isFrenchPublicHoliday } from '../common/utils/french-holidays';
 import {
   applyTemplateExceptions,
   computeTemplateOccurrences,
@@ -1165,12 +1166,14 @@ export class InterventionsService implements OnModuleInit {
     createdAt: Date;
     updatedAt: Date;
     pendingVersion?: Prisma.JsonValue | null;
+    skipHolidays?: boolean;
     pendingRequestedById?: string | null;
     pendingRequestedAt?: Date | null;
     stops: { id: string; daysOfWeek: number[]; intervalWeeks: number; specificDate: Date | null; categoryId: string | null; startTime: string; endTime: string; agentIds: string[]; order: number }[];
   }): InterventionTemplateEntity {
     return {
       pendingVersion: (template.pendingVersion as any) ?? null,
+      skipHolidays: template.skipHolidays ?? false,
       pendingRequestedAt: template.pendingRequestedAt ?? null,
       pendingRequestedByName: template.pendingRequestedById
         ? this.usersService.findOne(template.pendingRequestedById)?.name ?? null
@@ -1323,6 +1326,7 @@ export class InterventionsService implements OnModuleInit {
         startDate,
         endDate,
         active: dto.active ?? true,
+        skipHolidays: dto.skipHolidays ?? false,
         validatedAt: isAdmin ? new Date() : null,
         validatedById: isAdmin ? actorId : null,
         stops: {
@@ -1400,6 +1404,7 @@ export class InterventionsService implements OnModuleInit {
         startDate: startDate.toISOString(),
         endDate: endDate ? endDate.toISOString() : (null as any),
         active: dto.active ?? existing.active,
+        skipHolidays: dto.skipHolidays ?? existing.skipHolidays,
         stops: dto.stops ?? existing.stops.map((s) => this.snapshotStop(s)),
       };
       const template = await this.prisma.interventionTemplate.update({
@@ -1500,7 +1505,15 @@ export class InterventionsService implements OnModuleInit {
 
   /** Enregistre la version appliquée d'un gabarit dans son historique. */
   private async recordRevision(
-    template: { id: string; label: string; startDate: Date; endDate: Date | null; active: boolean; stops: Parameters<InterventionsService['snapshotStop']>[0][] },
+    template: {
+      id: string;
+      label: string;
+      startDate: Date;
+      endDate: Date | null;
+      active: boolean;
+      skipHolidays?: boolean;
+      stops: Parameters<InterventionsService['snapshotStop']>[0][];
+    },
     authorId: string | null,
     approvedById: string | null,
     note?: string,
@@ -1513,6 +1526,7 @@ export class InterventionsService implements OnModuleInit {
           startDate: template.startDate.toISOString(),
           endDate: template.endDate ? template.endDate.toISOString() : null,
           active: template.active,
+          skipHolidays: template.skipHolidays ?? false,
           stops: template.stops
             .slice()
             .sort((a, b) => a.order - b.order)
@@ -1539,6 +1553,7 @@ export class InterventionsService implements OnModuleInit {
     if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
     if (dto.endDate !== undefined) data.endDate = dto.endDate ? new Date(dto.endDate) : null;
     if (dto.active !== undefined) data.active = dto.active;
+    if (dto.skipHolidays !== undefined) data.skipHolidays = dto.skipHolidays;
     const siteName = existing.site.name;
 
     return this.prisma.$transaction(async (tx) => {
@@ -1701,6 +1716,7 @@ export class InterventionsService implements OnModuleInit {
       startDate: snapshot.startDate,
       endDate: snapshot.endDate,
       active: snapshot.active,
+      skipHolidays: snapshot.skipHolidays ?? false,
       // Un créneau supprimé depuis est recréé (nouvel identifiant).
       stops: (snapshot.stops ?? []).map((s: any) => ({ ...s, id: currentIds.has(s.id) ? s.id : undefined })),
     };
@@ -1728,6 +1744,37 @@ export class InterventionsService implements OnModuleInit {
       byTemplate.set(row.templateId, list);
     }
     return byTemplate;
+  }
+
+  /** Règles du calendrier des gabarits : changements d'un jour et périodes sans passage. */
+  private async loadRules(templateIds: string[], start: Date, end: Date) {
+    const exceptions = await this.loadExceptions(templateIds, start, end);
+    const pauses = new Map<string, { from: string; to: string }[]>();
+    if (templateIds.length) {
+      const rows = await this.prisma.templatePause.findMany({
+        where: { templateId: { in: templateIds }, from: { lte: end }, to: { gte: start } },
+      });
+      for (const row of rows) {
+        const list = pauses.get(row.templateId) ?? [];
+        list.push({ from: row.from.toISOString().slice(0, 10), to: row.to.toISOString().slice(0, 10) });
+        pauses.set(row.templateId, list);
+      }
+    }
+    return { exceptions, pauses };
+  }
+
+  /** Retire les jours en pause (et fériés si demandé) puis applique les changements d'un jour. */
+  private applyRules<T extends { date: string; stopId: string; agentIds: string[] }>(
+    occurrences: T[],
+    templateId: string,
+    rules: Awaited<ReturnType<InterventionsService['loadRules']>>,
+    skipHolidays: boolean,
+  ) {
+    const paused = rules.pauses.get(templateId) ?? [];
+    const open = occurrences.filter(
+      (o) => !paused.some((p) => o.date >= p.from && o.date <= p.to) && !(skipHolidays && isFrenchPublicHoliday(o.date)),
+    );
+    return applyTemplateExceptions(open, rules.exceptions.get(templateId) ?? []);
   }
 
   private todayParis() {
@@ -2001,26 +2048,31 @@ export class InterventionsService implements OnModuleInit {
     const proposedStart = dto.startDate ? new Date(dto.startDate) : existing?.startDate ?? new Date();
     const proposedEnd = dto.endDate !== undefined ? (dto.endDate ? new Date(dto.endDate) : null) : existing?.endDate ?? null;
     const proposedStops = this.stopsForCheck(dto, existing?.stops ?? []);
-    const exceptions = existing ? (await this.loadExceptions([existing.id], start, end)).get(existing.id) ?? [] : [];
+    const rules = await this.loadRules(existing ? [existing.id] : [], start, end);
+    const ruleId = existing?.id ?? '';
 
     const current =
       existing && existing.validatedAt && existing.active
-        ? applyTemplateExceptions(
+        ? this.applyRules(
             computeTemplateOccurrences(
               { siteId, startDate: existing.startDate, endDate: existing.endDate },
               existing.stops.map((s) => this.toStopLike(s)),
               start,
               end,
             ),
-            exceptions,
+            ruleId,
+            rules,
+            existing.skipHolidays,
           )
         : [];
     const proposed =
       dto.active === false
         ? []
-        : applyTemplateExceptions(
+        : this.applyRules(
             computeTemplateOccurrences({ siteId, startDate: proposedStart, endDate: proposedEnd }, proposedStops, start, end),
-            exceptions,
+            ruleId,
+            rules,
+            dto.skipHolidays ?? existing?.skipHolidays ?? false,
           );
 
     const categoryIds = [...new Set([...current, ...proposed].map((o) => o.categoryId).filter((id): id is string => !!id))];
@@ -2114,6 +2166,101 @@ export class InterventionsService implements OnModuleInit {
     };
   }
 
+  async listTemplatePauses(templateId: string) {
+    await this.getTemplate(templateId);
+    const rows = await this.prisma.templatePause.findMany({ where: { templateId }, orderBy: { from: 'asc' } });
+    return rows.map((r) => ({
+      id: r.id,
+      from: r.from.toISOString().slice(0, 10),
+      to: r.to.toISOString().slice(0, 10),
+      reason: r.reason,
+      createdByName: r.createdById ? this.usersService.findOne(r.createdById)?.name ?? null : null,
+    }));
+  }
+
+  /**
+   * Période sans passage (fermeture annuelle, travaux) : aucune mission n'est créée sur ces jours ;
+   * les missions déjà créées et pas encore commencées sur la période sont annulées.
+   */
+  async addTemplatePause(templateId: string, dto: { from: string; to: string; reason?: string }, actorId: string) {
+    const template = await this.prisma.interventionTemplate.findUnique({ where: { id: templateId }, include: { site: true } });
+    if (!template) throw new NotFoundException('Gabarit introuvable');
+    const from = (dto.from ?? '').slice(0, 10);
+    const to = (dto.to ?? '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw new BadRequestException('Dates invalides');
+    if (to < from) throw new BadRequestException('La fin doit être après le début');
+    if (to < this.todayParis()) throw new BadRequestException('Période déjà passée');
+    const pause = await this.prisma.templatePause.create({
+      data: { templateId, from: this.toDateOnly(from), to: this.toDateOnly(to), reason: dto.reason?.trim() || null, createdById: actorId },
+    });
+    const reason = `Fermeture du site${dto.reason?.trim() ? ` : ${dto.reason.trim()}` : ''}`;
+    const created = await this.prisma.intervention.findMany({
+      where: { generatedFromTemplateId: templateId, status: 'PLANNED', date: { gte: this.toDateOnly(from), lte: this.toDateOnly(to) } },
+      select: { id: true },
+    });
+    for (const mission of created) await this.cancel(mission.id, reason, actorId);
+    this.auditService.record({
+      actorId,
+      action: 'CREATE_TEMPLATE_EXCEPTION',
+      entityType: 'TemplatePause',
+      entityId: pause.id,
+      details: `${template.site.name} : pas de passage du ${from} au ${to}${dto.reason ? ` (${dto.reason})` : ''}`,
+    });
+    return { id: pause.id, from, to, reason: pause.reason, cancelledMissions: created.length };
+  }
+
+  async deleteTemplatePause(templateId: string, pauseId: string, actorId: string) {
+    const pause = await this.prisma.templatePause.findUnique({ where: { id: pauseId } });
+    if (!pause || pause.templateId !== templateId) throw new NotFoundException('Période introuvable');
+    await this.prisma.templatePause.delete({ where: { id: pauseId } });
+    this.auditService.record({
+      actorId,
+      action: 'DELETE_TEMPLATE_EXCEPTION',
+      entityType: 'TemplatePause',
+      entityId: pauseId,
+      details: `Période retirée (${pause.from.toISOString().slice(0, 10)} → ${pause.to.toISOString().slice(0, 10)})`,
+    });
+    await this.generateImminentInterventionsFromTemplates();
+    return { ok: true };
+  }
+
+  /**
+   * Copie les créneaux d'un gabarit vers un autre site (sans les agents, pour éviter les doubles
+   * affectations) ; la prestation est gardée si le site cible la propose.
+   */
+  async duplicateTemplate(templateId: string, targetSiteId: string, actorId: string, actorRole: string) {
+    const source = await this.prisma.interventionTemplate.findUnique({ where: { id: templateId }, include: { stops: true } });
+    if (!source) throw new NotFoundException('Gabarit introuvable');
+    const target = await this.prisma.site.findUnique({
+      where: { id: targetSiteId },
+      select: { id: true, name: true, categories: { where: { active: true }, select: { categoryId: true } } },
+    });
+    if (!target) throw new NotFoundException('Site introuvable');
+    const offered = new Set(target.categories.map((c) => c.categoryId));
+    return this.createTemplate(
+      {
+        label: `Gabarit ${target.name}`,
+        siteId: target.id,
+        skipHolidays: source.skipHolidays,
+        stops: source.stops
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((s, order) => ({
+            daysOfWeek: s.specificDate ? undefined : s.daysOfWeek,
+            intervalWeeks: s.intervalWeeks,
+            specificDate: s.specificDate ? s.specificDate.toISOString().slice(0, 10) : undefined,
+            categoryId: s.categoryId && offered.has(s.categoryId) ? s.categoryId : undefined,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            agentIds: [],
+            order,
+          })),
+      },
+      actorId,
+      actorRole,
+    );
+  }
+
   async toggleTemplate(id: string, active: boolean) {
     const template = await this.prisma.interventionTemplate.update({
       where: { id },
@@ -2136,15 +2283,17 @@ export class InterventionsService implements OnModuleInit {
       throw new NotFoundException('Gabarit introuvable');
     }
     const stops = template.stops.map((s) => this.toStopLike(s));
-    const exceptions = await this.loadExceptions([template.id], this.toDateOnly(startDate), this.toDateOnly(endDate));
-    const occurrences = applyTemplateExceptions(
+    const rules = await this.loadRules([template.id], this.toDateOnly(startDate), this.toDateOnly(endDate));
+    const occurrences = this.applyRules(
       computeTemplateOccurrences(
         { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
         stops,
         this.toDateOnly(startDate),
         this.toDateOnly(endDate),
       ),
-      exceptions.get(template.id) ?? [],
+      template.id,
+      rules,
+      template.skipHolidays,
     );
     const siteIds = Array.from(new Set(occurrences.map((o) => o.siteId)));
     const sites = siteIds.length
@@ -2196,17 +2345,19 @@ export class InterventionsService implements OnModuleInit {
       agentIds: string[];
       exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] };
     }> = [];
-    const exceptionsByTemplate = await this.loadExceptions(templates.map((t) => t.id), horizonStart, horizonEnd);
+    const rules = await this.loadRules(templates.map((t) => t.id), horizonStart, horizonEnd);
     for (const template of templates) {
       const stops = template.stops.map((s) => this.toStopLike(s));
-      const occurrences = applyTemplateExceptions(
+      const occurrences = this.applyRules(
         computeTemplateOccurrences(
           { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
           stops,
           horizonStart,
           horizonEnd,
         ),
-        exceptionsByTemplate.get(template.id) ?? [],
+        template.id,
+        rules,
+        template.skipHolidays,
       );
       for (const occ of occurrences) {
         if (params.agentId && !occ.agentIds.includes(params.agentId)) continue;
@@ -2339,17 +2490,19 @@ export class InterventionsService implements OnModuleInit {
         include: { stops: true },
       });
 
-      const exceptionsByTemplate = await this.loadExceptions(templates.map((t) => t.id), todayStart, horizonEnd);
+      const rules = await this.loadRules(templates.map((t) => t.id), todayStart, horizonEnd);
       for (const template of templates) {
         const stops = template.stops.map((s) => this.toStopLike(s));
-        const occurrences = applyTemplateExceptions(
+        const occurrences = this.applyRules(
           computeTemplateOccurrences(
             { siteId: template.siteId, startDate: template.startDate, endDate: template.endDate },
             stops,
             todayStart,
             horizonEnd,
           ),
-          exceptionsByTemplate.get(template.id) ?? [],
+          template.id,
+          rules,
+          template.skipHolidays,
         );
         if (!occurrences.length) continue;
 

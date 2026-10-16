@@ -18,6 +18,8 @@ import {
   History,
   CalendarDays,
   ChevronDown,
+  Inbox,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 
@@ -32,6 +34,8 @@ const ADMIN_MENU: MenuSection[] = [
     label: 'Opérations',
     items: [
       { type: 'link', to: '/dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
+      { type: 'link', to: '/a-traiter', label: 'À traiter', icon: Inbox },
+      { type: 'link', to: '/pilotage', label: 'Pilotage', icon: TrendingUp },
       { type: 'link', to: '/sites', label: 'Sites', icon: MapPin },
       { type: 'link', to: '/interventions', label: 'Interventions', icon: ClipboardList },
       { type: 'link', to: '/approvals', label: 'Demandes de validation', icon: ClipboardCheck },
@@ -119,7 +123,10 @@ const SUPERVISOR_MENU: MenuSection[] = [
   },
   {
     label: 'Suivi',
-    items: [{ type: 'link', to: '/supervision/rapports', label: 'Rapports', icon: BarChart3 }],
+    items: [
+      { type: 'link', to: '/supervision/pilotage', label: 'Pilotage', icon: TrendingUp },
+      { type: 'link', to: '/supervision/rapports', label: 'Rapports', icon: BarChart3 },
+    ],
   },
 ];
 

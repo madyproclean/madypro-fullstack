@@ -112,7 +112,7 @@ export const ApiKeysPage: React.FC = () => {
     }
   };
 
-  const portalUrl = (portalToken: PortalToken) => `${env.apiUrl.replace(/\/$/, '')}/public-api/portal/${portalToken.token}`;
+  const portalUrl = (portalToken: PortalToken) => `${window.location.origin}/portail/${portalToken.token}`;
 
   return (
     <div>

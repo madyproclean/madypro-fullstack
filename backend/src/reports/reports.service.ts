@@ -1,4 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { frenchPublicHolidays } from '../common/utils/french-holidays';
+import { parisDateTime } from '../common/utils/paris-time';
 import { PrismaService } from '../database/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { MailerService } from '../notifications/mailer.service';
@@ -877,42 +879,8 @@ export class ReportsService implements OnModuleInit {
     return [header, ...lines].join('\n');
   }
 
-  private getEasterSunday(year: number): Date {
-    // Algorithme de Gauss (calendrier grégorien)
-    const a = year % 19;
-    const b = Math.floor(year / 100);
-    const c = year % 100;
-    const d = Math.floor(b / 4);
-    const e = b % 4;
-    const f = Math.floor((b + 8) / 25);
-    const g = Math.floor((b - f + 1) / 3);
-    const h = (19 * a + b - d - g + 15) % 30;
-    const i = Math.floor(c / 4);
-    const k = c % 4;
-    const l = (32 + 2 * e + 2 * i - h - k) % 7;
-    const m = Math.floor((a + 11 * h + 22 * l) / 451);
-    const month = Math.floor((h + l - 7 * m + 114) / 31);
-    const day = ((h + l - 7 * m + 114) % 31) + 1;
-    return new Date(Date.UTC(year, month - 1, day));
-  }
-
   private getFrenchPublicHolidays(year: number): Set<string> {
-    const easter = this.getEasterSunday(year);
-    const addDays = (date: Date, days: number) => new Date(date.getTime() + days * 86400000);
-    const dates = [
-      new Date(Date.UTC(year, 0, 1)),
-      addDays(easter, 1),
-      new Date(Date.UTC(year, 4, 1)),
-      new Date(Date.UTC(year, 4, 8)),
-      addDays(easter, 39),
-      addDays(easter, 50),
-      new Date(Date.UTC(year, 6, 14)),
-      new Date(Date.UTC(year, 7, 15)),
-      new Date(Date.UTC(year, 10, 1)),
-      new Date(Date.UTC(year, 10, 11)),
-      new Date(Date.UTC(year, 11, 25)),
-    ];
-    return new Set(dates.map((d) => d.toISOString().slice(0, 10)));
+    return frenchPublicHolidays(year);
   }
 
   /**
@@ -950,22 +918,29 @@ export class ReportsService implements OnModuleInit {
     };
     const byAgent = new Map<string, Agg>();
 
+    // Nuit = 22h–6h à l'heure de Paris (changements d'heure compris).
     const nightOverlapMinutes = (checkIn: Date, checkOut: Date) => {
       let minutes = 0;
-      const cursor = new Date(checkIn);
-      cursor.setUTCHours(0, 0, 0, 0);
-      while (cursor.getTime() < checkOut.getTime()) {
-        const nightStart = new Date(cursor.getTime() + 22 * 60 * 60 * 1000);
-        const nightEnd = new Date(cursor.getTime() + 30 * 60 * 60 * 1000); // 06:00 le lendemain
+      const firstDay = new Date(checkIn.getTime() - 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+      let cursor = new Date(`${firstDay}T00:00:00Z`);
+      while (cursor.getTime() < checkOut.getTime() + 86_400_000) {
+        const day = cursor.toISOString().slice(0, 10);
+        const next = new Date(cursor.getTime() + 86_400_000).toISOString().slice(0, 10);
+        const nightStart = parisDateTime(day, '22:00');
+        const nightEnd = parisDateTime(next, '06:00');
         const overlapStart = Math.max(checkIn.getTime(), nightStart.getTime());
         const overlapEnd = Math.min(checkOut.getTime(), nightEnd.getTime());
-        if (overlapEnd > overlapStart) {
-          minutes += (overlapEnd - overlapStart) / 60000;
-        }
-        cursor.setUTCDate(cursor.getUTCDate() + 1);
+        if (overlapEnd > overlapStart) minutes += (overlapEnd - overlapStart) / 60000;
+        cursor = new Date(cursor.getTime() + 86_400_000);
       }
       return minutes;
     };
+    const weekOf = (date: Date) => {
+      const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      return d.toISOString().slice(0, 10);
+    };
+    const weekly = new Map<string, Map<string, number>>();
 
     attendances.forEach((att) => {
       if (!att.checkInTime || !att.checkOutTime) return;
@@ -982,6 +957,9 @@ export class ReportsService implements OnModuleInit {
         holidayMinutes: 0,
       };
 
+      const weeks = weekly.get(key) ?? new Map<string, number>();
+      weeks.set(weekOf(att.date), (weeks.get(weekOf(att.date)) ?? 0) + totalMinutes);
+      weekly.set(key, weeks);
       if (getHolidays(year).has(dateKey)) {
         existing.holidayMinutes += totalMinutes;
       } else if (att.date.getUTCDay() === 0) {
@@ -995,16 +973,34 @@ export class ReportsService implements OnModuleInit {
     });
 
     const toHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
-    return Array.from(byAgent.values())
-      .map((agg) => ({
-        agentName: agg.agentName,
-        agentEmail: agg.agentEmail,
-        normalHours: toHours(agg.normalMinutes),
-        nightHours: toHours(agg.nightMinutes),
-        sundayHours: toHours(agg.sundayMinutes),
-        holidayHours: toHours(agg.holidayMinutes),
-      }))
+    const LEGAL_WEEKLY_MINUTES = 35 * 60;
+    return Array.from(byAgent.entries())
+      .map(([userId, agg]) => {
+        const overtime = Array.from(weekly.get(userId)?.values() ?? []).reduce((n, m) => n + Math.max(0, m - LEGAL_WEEKLY_MINUTES), 0);
+        return {
+          agentName: agg.agentName,
+          agentEmail: agg.agentEmail,
+          normalHours: toHours(agg.normalMinutes),
+          nightHours: toHours(agg.nightMinutes),
+          sundayHours: toHours(agg.sundayMinutes),
+          holidayHours: toHours(agg.holidayMinutes),
+          totalHours: toHours(agg.normalMinutes + agg.nightMinutes + agg.sundayMinutes + agg.holidayMinutes),
+          /** Heures au-delà de 35 h par semaine (comprises dans le total). */
+          overtimeHours: toHours(overtime),
+        };
+      })
       .sort((a, b) => a.agentName.localeCompare(b.agentName));
+  }
+
+  /** Préparation de paie au format tableur (séparateur « ; », lisible par Excel). */
+  async payrollBreakdownCsv(startDate?: string, endDate?: string) {
+    const rows = await this.payrollBreakdown(startDate, endDate);
+    const fmt = (n: number) => n.toFixed(2).replace('.', ',');
+    const header = 'Agent;E-mail;Heures normales;Heures de nuit (22h-6h);Heures du dimanche;Heures fériées;Total;Dont heures au-delà de 35 h/semaine';
+    const lines = rows.map((r) =>
+      [r.agentName, r.agentEmail, fmt(r.normalHours), fmt(r.nightHours), fmt(r.sundayHours), fmt(r.holidayHours), fmt(r.totalHours), fmt(r.overtimeHours)].join(';'),
+    );
+    return '\uFEFF' + [header, ...lines].join('\n');
   }
 
   async pushPayrollToPayrollProvider(startDate?: string, endDate?: string) {

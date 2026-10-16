@@ -10,6 +10,7 @@ import { SupervisorAbsencesPage } from '../pages/supervision/SupervisorAbsencesP
 import { RealtimeSupervisionPage } from '../pages/supervision/RealtimeSupervisionPage';
 import { AgentProfilePage } from '../pages/supervision/AgentProfilePage';
 import { MyTeamPage } from '../pages/supervision/MyTeamPage';
+import { SteeringPage } from '../pages/steering/SteeringPage';
 import { SiteProfilePage } from '../pages/supervision/SiteProfilePage';
 import { SupervisorHoursQuotaPage } from '../pages/supervision/SupervisorHoursQuotaPage';
 
@@ -25,6 +26,7 @@ export const SupervisionRoutes = () => (
       <Route path="/supervision/planning" element={<SupervisorPlanningPage />} />
       <Route path="/supervision/interventions" element={<SupervisorInterventionsPage />} />
       <Route path="/supervision/absences" element={<SupervisorAbsencesPage />} />
+      <Route path="/supervision/pilotage" element={<SteeringPage />} />
       <Route path="/supervision/rapports" element={<SupervisorHoursQuotaPage />} />
       <Route path="/supervision/agents/:id" element={<AgentProfilePage />} />
       <Route path="/supervision/sites/:id" element={<SiteProfilePage />} />

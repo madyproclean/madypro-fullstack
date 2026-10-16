@@ -114,7 +114,7 @@ export async function updateSiteCategory(
   token: string,
   siteId: string,
   siteCategoryId: string,
-  payload: { startTime?: string; endTime?: string; active?: boolean },
+  payload: { startTime?: string; endTime?: string; active?: boolean; unitPriceHT?: number | null },
 ): Promise<SiteCategory> {
   return apiFetch<SiteCategory>({
     path: `sites/${siteId}/categories/${siteCategoryId}`,

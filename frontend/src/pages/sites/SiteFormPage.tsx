@@ -29,6 +29,7 @@ import {
   getSiteQrCode,
   sendSitePlanning,
   listSiteCategories,
+  updateSiteCategory,
   addSiteCategory,
   removeSiteCategory,
   createSiteCategoryChecklistItem,
@@ -477,6 +478,25 @@ export const SiteFormPage: React.FC = () => {
       notify(err instanceof Error ? err.message : "Impossible d'ajouter cette catégorie.", 'error');
     } finally {
       setCategoryBusy(false);
+    }
+  };
+
+  /** Enregistre le prix d'un passage à la sortie du champ. */
+  const handleSitePriceChange = async (siteCategoryId: string, raw: string) => {
+    if (!token || !siteId) return;
+    const value = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
+    if (value !== null && (Number.isNaN(value) || value < 0)) {
+      notify('Prix invalide', 'error');
+      return;
+    }
+    const current = siteCategories.find((sc) => sc.id === siteCategoryId);
+    if ((current?.unitPriceHT ?? null) === value) return;
+    try {
+      const updated = await updateSiteCategory(token, siteId, siteCategoryId, { unitPriceHT: value });
+      setSiteCategories((prev) => prev.map((sc) => (sc.id === siteCategoryId ? { ...sc, unitPriceHT: updated.unitPriceHT } : sc)));
+      notify('Prix du passage enregistré');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Enregistrement impossible', 'error');
     }
   };
 
@@ -1022,6 +1042,18 @@ export const SiteFormPage: React.FC = () => {
                                   {sc.startTime}–{sc.endTime}
                                 </span>
                               </div>
+                              <label className="form-field" style={{ maxWidth: 260 }}>
+                                <span>Prix d’un passage (€ HT)</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  aria-label={`Prix d’un passage ${sc.category.label}`}
+                                  defaultValue={sc.unitPriceHT ?? ''}
+                                  placeholder="Pour préparer la facture du mois"
+                                  onBlur={(event) => handleSitePriceChange(sc.id, event.target.value)}
+                                />
+                              </label>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                                 {sc.checklist.length === 0 && (
                                   <small className="form-helper">Aucune tâche définie pour cette catégorie.</small>

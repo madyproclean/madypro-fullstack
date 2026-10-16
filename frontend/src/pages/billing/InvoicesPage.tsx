@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Send, X, Trash2, CreditCard } from 'lucide-react';
+import { Download, Send, X, Trash2, CreditCard, FileText } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { Invoice, InvoiceStatus, InvoicingKpis } from '../../types/invoice';
 import {
@@ -8,6 +8,7 @@ import {
   sendInvoice,
   deleteInvoice,
   recordInvoicePayment,
+  draftInvoiceFromMissions,
 } from '../../services/api/invoices.api';
 import { listSites } from '../../services/api/sites.api';
 import { Site } from '../../types/site';
@@ -50,6 +51,29 @@ export const InvoicesPage: React.FC = () => {
   const [paymentTarget, setPaymentTarget] = useState<Invoice | null>(null);
   const [paymentForm, setPaymentForm] = useState({ amountPaidHT: '', paymentMethod: '' });
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const previousMonth = (() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  const [draft, setDraft] = useState({ siteId: '', month: previousMonth });
+  const [drafting, setDrafting] = useState(false);
+
+  /** Prépare la facture du mois en brouillon, à relire avant envoi. */
+  const prepareMonthlyInvoice = async () => {
+    if (!token || !draft.siteId) return;
+    setDrafting(true);
+    try {
+      const invoice = await draftInvoiceFromMissions(token, draft.siteId, draft.month);
+      notify(`Brouillon ${invoice.number} créé : relisez les prix avant de l’envoyer`);
+      load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Préparation impossible', 'error');
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   const load = () => {
     if (!token) return;
@@ -163,6 +187,33 @@ export const InvoicesPage: React.FC = () => {
   return (
     <div>
       <PageHeader title="Factures clients" subtitle="Suivez vos factures, relances et encaissements." />
+
+      <div className="panel" style={{ margin: '1rem 0', display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <strong>Préparer la facture du mois</strong>
+          <p className="card__meta" style={{ margin: '0.25rem 0 0' }}>
+            Une ligne par prestation, avec le nombre de passages réalisés et le prix du passage du site. Créée en brouillon.
+          </p>
+        </div>
+        <label className="filter-field">
+          Site
+          <select value={draft.siteId} onChange={(e) => setDraft((d) => ({ ...d, siteId: e.target.value }))}>
+            <option value="">Choisir…</option>
+            {sites.map((site) => (
+              <option key={site.id} value={site.id}>
+                {site.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="filter-field">
+          Mois
+          <input type="month" value={draft.month} onChange={(e) => setDraft((d) => ({ ...d, month: e.target.value }))} />
+        </label>
+        <Button type="button" icon={FileText} loading={drafting} disabled={!draft.siteId || !draft.month} onClick={prepareMonthlyInvoice}>
+          Préparer le brouillon
+        </Button>
+      </div>
 
       {kpis && (
         <div className="page-grid" style={{ marginBottom: '1.5rem' }}>

@@ -26,6 +26,7 @@ import {
 } from '../../types/report';
 import { useAuthContext } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
+import { API_BASE_URL } from '../../services/api/client';
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const today = new Date();
@@ -134,6 +135,21 @@ export const ReportsPage: React.FC = () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Impossible de générer le PDF';
       notify(message, 'error');
+    }
+  };
+
+  /** Préparation de paie au format tableur (normal, nuit, dimanche, férié, au-delà de 35 h). */
+  const handleDownloadPayrollPrep = async () => {
+    if (!token) return;
+    try {
+      const base = API_BASE_URL.replace(/\/$/, '');
+      const res = await fetch(`${base}/reports/payroll-breakdown.csv?startDate=${filters.startDate}&endDate=${filters.endDate}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Export impossible');
+      downloadTextFile(`preparation-paie-${filters.startDate}-${filters.endDate}.csv`, await res.text());
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Export impossible', 'error');
     }
   };
 
@@ -523,11 +539,16 @@ export const ReportsPage: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                 <div>
                   <h3>Paie détaillée</h3>
-                  <p>Heures normales, nuit, dimanche et jours fériés par agent.</p>
+                  <p>Heures normales, nuit (22h–6h), dimanche, jours fériés et heures au-delà de 35 h par semaine.</p>
                 </div>
-                <Button type="button" icon={Send} onClick={handlePushPayroll} disabled={pushingPayroll}>
-                  {pushingPayroll ? 'Envoi...' : 'Envoyer au prestataire de paie'}
-                </Button>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <Button type="button" icon={Download} onClick={handleDownloadPayrollPrep}>
+                    Télécharger (tableur)
+                  </Button>
+                  <Button type="button" variant="ghost" icon={Send} onClick={handlePushPayroll} disabled={pushingPayroll}>
+                    {pushingPayroll ? 'Envoi...' : 'Envoyer au prestataire de paie'}
+                  </Button>
+                </div>
               </div>
               <p style={{ color: 'var(--color-muted)', marginTop: '0.5rem' }}>
                 Nécessite un webhook « payroll.export » configuré (voir Paramètres → Webhooks).
@@ -541,6 +562,8 @@ export const ReportsPage: React.FC = () => {
                       <th>Nuit</th>
                       <th>Dimanche</th>
                       <th>Férié</th>
+                      <th>Total</th>
+                      <th>Au-delà de 35 h</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -551,6 +574,8 @@ export const ReportsPage: React.FC = () => {
                         <td>{row.nightHours} h</td>
                         <td>{row.sundayHours} h</td>
                         <td>{row.holidayHours} h</td>
+                        <td>{row.totalHours ?? '—'} h</td>
+                        <td>{row.overtimeHours ? `${row.overtimeHours} h` : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

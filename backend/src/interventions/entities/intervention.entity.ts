@@ -51,5 +51,6 @@ export class InterventionTemplateEntity {
   pendingVersion?: Record<string, unknown> | null;
   pendingRequestedAt?: Date | null;
   pendingRequestedByName?: string | null;
+  skipHolidays?: boolean;
   stops: TemplateStopEntity[] = [];
 }
