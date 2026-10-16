@@ -1760,12 +1760,14 @@ export class InterventionsService implements OnModuleInit {
 
   /** Règles du calendrier des gabarits : changements d'un jour et périodes sans passage. */
   private async loadRules(templateIds: string[], start: Date, end: Date) {
-    const exceptions = await this.loadExceptions(templateIds, start, end);
+    const [exceptions, rows] = await Promise.all([
+      this.loadExceptions(templateIds, start, end),
+      templateIds.length
+        ? this.prisma.templatePause.findMany({ where: { templateId: { in: templateIds }, from: { lte: end }, to: { gte: start } } })
+        : Promise.resolve([]),
+    ]);
     const pauses = new Map<string, { from: string; to: string }[]>();
-    if (templateIds.length) {
-      const rows = await this.prisma.templatePause.findMany({
-        where: { templateId: { in: templateIds }, from: { lte: end }, to: { gte: start } },
-      });
+    {
       for (const row of rows) {
         const list = pauses.get(row.templateId) ?? [];
         list.push({ from: row.from.toISOString().slice(0, 10), to: row.to.toISOString().slice(0, 10) });
@@ -2406,7 +2408,14 @@ export class InterventionsService implements OnModuleInit {
       agentIds: string[];
       exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] };
     }> = [];
-    const rules = await this.loadRules(templates.map((t) => t.id), horizonStart, horizonEnd);
+    // Règles du calendrier et missions déjà créées : deux lectures indépendantes, faites ensemble.
+    const [rules, realInterventions] = await Promise.all([
+      this.loadRules(templates.map((t) => t.id), horizonStart, horizonEnd),
+      this.prisma.intervention.findMany({
+        where: { date: { gte: horizonStart, lte: horizonEnd }, generatedFromStopId: { not: null } },
+        select: { id: true, date: true, generatedFromStopId: true, status: true },
+      }),
+    ]);
     for (const template of templates) {
       const stops = template.stops.map((s) => this.toStopLike(s));
       const occurrences = this.applyRules(
@@ -2431,10 +2440,6 @@ export class InterventionsService implements OnModuleInit {
       }
     }
 
-    const realInterventions = await this.prisma.intervention.findMany({
-      where: { date: { gte: horizonStart, lte: horizonEnd }, generatedFromStopId: { not: null } },
-      select: { id: true, date: true, generatedFromStopId: true, status: true },
-    });
     const realByKey = new Map(
       realInterventions.map((i) => [`${i.date.toISOString().slice(0, 10)}:${i.generatedFromStopId}`, i]),
     );

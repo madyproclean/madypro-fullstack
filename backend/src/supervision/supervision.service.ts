@@ -54,12 +54,13 @@ export class SupervisionService {
   async today(viewer: Viewer, date?: string, now: Date = new Date()): Promise<SupervisorToday> {
     const day = date ?? parisToday(now);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('date attendue au format YYYY-MM-DD');
-    const siteIds = await this.scope.siteIds(viewer);
+    // Appels groupés : chaque aller-retour vers la base compte (base distante).
+    const [siteIds, agentIds] = await Promise.all([this.scope.siteIds(viewer), this.scope.agentIds(viewer)]);
     const siteFilter: Prisma.InterventionWhereInput = siteIds ? { siteId: { in: siteIds } } : {};
     const dayStart = new Date(`${day}T00:00:00.000Z`);
     const dayEnd = new Date(`${day}T23:59:59.999Z`);
 
-    const [interventions, siteCount] = await Promise.all([
+    const [interventions, siteCount, pendingAbsences] = await Promise.all([
       this.prisma.intervention.findMany({
         where: { ...siteFilter, date: { gte: dayStart, lte: dayEnd }, status: { not: 'CANCELLED' } },
         include: {
@@ -70,6 +71,13 @@ export class SupervisionService {
         orderBy: { startTime: 'asc' },
       }),
       siteIds ? Promise.resolve(siteIds.length) : this.prisma.site.count({ where: { active: true } }),
+      // Demandes d'absence en attente de l'équipe (toutes dates).
+      this.prisma.absence.findMany({
+        where: { status: 'PENDING', ...(agentIds ? { userId: { in: [...agentIds] } } : {}) },
+        include: { user: { select: { firstName: true, lastName: true } } },
+        orderBy: { from: 'asc' },
+        take: 20,
+      }),
     ]);
 
     const expected = new Set<string>();
@@ -83,15 +91,6 @@ export class SupervisionService {
         })
       : [];
     const absent = new Set(approvedAbsences.map((a) => a.userId));
-
-    // Demandes d'absence en attente de l'équipe (toutes dates).
-    const agentIds = await this.scope.agentIds(viewer);
-    const pendingAbsences = await this.prisma.absence.findMany({
-      where: { status: 'PENDING', ...(agentIds ? { userId: { in: [...agentIds] } } : {}) },
-      include: { user: { select: { firstName: true, lastName: true } } },
-      orderBy: { from: 'asc' },
-      take: 20,
-    });
 
     const defaultTolerance = this.settings.getSettings().attendanceRules.toleranceMinutes ?? 10;
     const present = new Set<string>();
