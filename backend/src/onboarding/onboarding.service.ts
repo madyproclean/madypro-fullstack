@@ -51,6 +51,14 @@ export class OnboardingService {
     return this.findForUser(userId);
   }
 
+  async getItemUserId(id: string): Promise<string> {
+    const item = await this.prisma.userOnboardingItem.findUnique({ where: { id }, select: { userId: true } });
+    if (!item) {
+      throw new NotFoundException('Étape introuvable');
+    }
+    return item.userId;
+  }
+
   async setDone(id: string, done: boolean, actor: { userId?: string; role?: string }) {
     const existing = await this.prisma.userOnboardingItem.findUnique({ where: { id } });
     if (!existing) {

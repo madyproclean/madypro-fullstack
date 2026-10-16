@@ -6,6 +6,7 @@ import { CheckOutDto } from './dto/check-out.dto';
 import { UsersService } from '../users/users.service';
 import { SitesService } from '../sites/sites.service';
 import { CreateManualAttendanceDto } from './dto/create-manual.dto';
+import { RegularizeAttendanceDto } from './dto/regularize-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { CancelAttendanceDto } from './dto/cancel-attendance.dto';
 import { AuditService } from '../audit/audit.service';
@@ -25,6 +26,8 @@ type AttendanceFilters = {
   status?: AttendanceStatus | 'all';
   page?: number;
   pageSize?: number;
+  /** Restreint aux pointages des interventions de ces sites (périmètre superviseur). */
+  siteIds?: string[] | null;
 };
 
 type AttendanceView = {
@@ -188,6 +191,20 @@ export class AttendanceService implements OnModuleInit {
       },
     });
 
+    // Un agent dont l'absence est validée pour ce jour n'est pas « en retard » : son
+    // remplacement relève de la mission non couverte, pas d'une alerte de retard.
+    const assignedIds = [...new Set(interventions.flatMap((i) => i.assignments.map((a) => a.userId)))];
+    const absentIds = new Set(
+      assignedIds.length
+        ? (
+            await this.prisma.absence.findMany({
+              where: { userId: { in: assignedIds }, status: 'APPROVED', from: { lte: dayEnd }, to: { gte: dayStart } },
+              select: { userId: true },
+            })
+          ).map((a) => a.userId)
+        : [],
+    );
+
     for (const intervention of interventions) {
       if (!intervention.assignments.length) continue;
       const toleranceMinutes = (intervention.site as any).toleranceMinutes ?? defaultToleranceMinutes;
@@ -200,7 +217,7 @@ export class AttendanceService implements OnModuleInit {
 
       for (const assignment of intervention.assignments) {
         const key = `${intervention.id}:${assignment.userId}`;
-        if (this.lateNotified.has(key)) continue;
+        if (this.lateNotified.has(key) || absentIds.has(assignment.userId)) continue;
         const attendance = intervention.attendances.find((a) => a.userId === assignment.userId);
         if (attendance?.checkInTime) continue;
         this.lateNotified.add(key);
@@ -213,6 +230,9 @@ export class AttendanceService implements OnModuleInit {
               targetId: supervisorId,
               title: 'Retard sur intervention',
               message: `${agentName} n'a pas démarré "${intervention.site.name}" (prévu ${intervention.startTime}).`,
+              category: 'late',
+              // Ouvre la mission concernée sur la tablette superviseur.
+              data: { interventionId: intervention.id },
             } as any);
           } catch (err: any) {
             this.logger.warn(`Alerte retard échouée (${key} -> superviseur ${supervisorId}): ${err?.message || err}`);
@@ -342,6 +362,7 @@ export class AttendanceService implements OnModuleInit {
     const where: Prisma.AttendanceWhereInput = {};
     if (filters.userId) where.userId = filters.userId;
     if (filters.interventionId) where.interventionId = filters.interventionId;
+    if (filters.siteIds) where.intervention = { siteId: { in: filters.siteIds } };
     if (filters.status && filters.status !== 'all') where.status = filters.status;
     if (filters.startDate || filters.endDate) {
       where.date = {};
@@ -465,6 +486,56 @@ export class AttendanceService implements OnModuleInit {
       details: 'Modification horaires',
     });
     return this.toView(this.toEntity(record));
+  }
+
+  /**
+   * Régularisation d'un pointage (oubli, badge en panne…) : heures saisies par le superviseur, motif
+   * obligatoire, ancienne et nouvelle valeur gardées dans le journal d'audit.
+   */
+  async regularize(id: string, dto: RegularizeAttendanceDto, actor: { id: string; name?: string }) {
+    const record = await this.getRecord(id);
+    if (!dto.checkInTime && !dto.checkOutTime) {
+      throw new BadRequestException('Indiquez au moins une heure à corriger');
+    }
+    if (record.status === 'CANCELLED') {
+      throw new BadRequestException('Ce pointage est annulé');
+    }
+    const day = record.date.toISOString().slice(0, 10);
+    const checkIn = dto.checkInTime ? this.combine(day, dto.checkInTime) : record.checkInTime ?? record.arrivalTime;
+    let checkOut = dto.checkOutTime ? this.combine(day, dto.checkOutTime) : record.checkOutTime;
+    // Mission de nuit : une fin plus tôt que le début tombe le lendemain.
+    if (checkIn && checkOut && checkOut <= checkIn && dto.checkOutTime) {
+      checkOut = new Date(checkOut.getTime() + 24 * 60 * 60 * 1000);
+    }
+    if (checkIn && checkOut && checkOut <= checkIn) {
+      throw new BadRequestException("L'heure de fin doit être après l'heure de début");
+    }
+    if (checkOut && checkOut.getTime() > Date.now() + 5 * 60 * 1000) {
+      throw new BadRequestException("L'heure de fin ne peut pas être dans le futur");
+    }
+    const reason = dto.reason.trim();
+    const stamp = `Régularisé par ${actor.name ?? this.usersService.findOne(actor.id)?.name ?? 'le superviseur'} : ${reason}`;
+    const updated = await this.prisma.attendance.update({
+      where: { id },
+      data: {
+        checkInTime: checkIn ?? null,
+        checkOutTime: checkOut ?? null,
+        status: checkIn && checkOut ? 'COMPLETED' : record.status,
+        manual: true,
+        note: record.note ? `${record.note}\n${stamp}` : stamp,
+      },
+    });
+    const clock = (d?: Date | null) => (d ? this.formatTime(d) ?? null : null);
+    this.auditService.record({
+      actorId: actor.id,
+      action: 'UPDATE_ATTENDANCE',
+      entityType: 'attendance',
+      entityId: id,
+      before: { checkIn: clock(record.checkInTime ?? record.arrivalTime), checkOut: clock(record.checkOutTime) },
+      after: { checkIn: clock(updated.checkInTime), checkOut: clock(updated.checkOutTime) },
+      details: `Régularisation : ${reason}`,
+    });
+    return this.toView(this.toEntity(updated));
   }
 
   async cancel(id: string, dto: CancelAttendanceDto) {
@@ -646,6 +717,7 @@ export class AttendanceService implements OnModuleInit {
     this.realtime.broadcast('attendance.checkout', {
       attendanceId: view.id,
       userId: existing.userId,
+      siteId: view.site.id,
       status: view.status,
       checkOutTime: view.checkOutTime,
       date: view.date,
@@ -901,6 +973,15 @@ export class AttendanceService implements OnModuleInit {
         where: { id: intervention.id },
         data: { status: complete ? 'NEEDS_REVIEW' : 'IN_PROGRESS' },
       });
+      if (complete && intervention.status !== 'NEEDS_REVIEW') {
+        const site = await this.prisma.site.findUnique({ where: { id: intervention.siteId }, select: { name: true } });
+        const siteName = site?.name ?? 'Un site';
+        await this.notifications.notifySiteSupervisors([intervention.siteId], {
+          title: 'Intervention à valider',
+          message: `${siteName} : tous les agents ont terminé, l'intervention attend votre validation.`,
+          data: { interventionId: intervention.id },
+        });
+      }
       return;
     }
 
@@ -1005,7 +1086,7 @@ export class AttendanceService implements OnModuleInit {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false,
+      hourCycle: 'h23',
     });
     const parisAsUtc = new Date(`${parisString.replace(',', '')} UTC`);
     const offsetMs = guessUtc.getTime() - parisAsUtc.getTime();
@@ -1044,10 +1125,15 @@ export class AttendanceService implements OnModuleInit {
     return Math.round(R * c);
   }
 
-  async getAnomalies() {
+  async getAnomalies(siteIds: string[] | null = null) {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const attendances = await this.prisma.attendance.findMany({
-      where: { date: { gte: since }, checkInTime: { not: null }, checkOutTime: { not: null } },
+      where: {
+        date: { gte: since },
+        checkInTime: { not: null },
+        checkOutTime: { not: null },
+        ...(siteIds ? { intervention: { siteId: { in: siteIds } } } : {}),
+      },
       include: { user: { select: { firstName: true, lastName: true } }, intervention: { select: { siteId: true, site: { select: { name: true } } } } },
     });
 
@@ -1099,10 +1185,11 @@ export class AttendanceService implements OnModuleInit {
     return anomalies;
   }
 
-  async getLiveMap() {
+  async getLiveMap(siteIds: string[] | null = null) {
     const cutoff = new Date(Date.now() - 30 * 60 * 1000);
     const records = await this.prisma.attendance.findMany({
       where: {
+        ...(siteIds ? { intervention: { siteId: { in: siteIds } } } : {}),
         status: 'PENDING',
         checkInTime: { not: null },
         checkOutTime: null,

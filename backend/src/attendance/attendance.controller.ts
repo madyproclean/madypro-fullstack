@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CheckOutDto } from './dto/check-out.dto';
@@ -6,19 +6,34 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateManualAttendanceDto } from './dto/create-manual.dto';
+import { RegularizeAttendanceDto } from './dto/regularize-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { CancelAttendanceDto } from './dto/cancel-attendance.dto';
 import { MarkArrivalDto } from './dto/mark-arrival.dto';
 import { HeartbeatDto } from './dto/heartbeat.dto';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('attendance')
 export class AttendanceController {
-  constructor(private readonly service: AttendanceService) {}
+  constructor(
+    private readonly service: AttendanceService,
+    private readonly scope: SupervisorScopeService,
+  ) {}
+
+  /** Un agent ne lit que ses pointages ; un superviseur, ceux des interventions de ses sites. */
+  private async loadInScope(req: any, id: string) {
+    const attendance = await this.service.findOne(id);
+    if (req.user?.role === 'AGENT' && attendance.agent.id !== req.user?.sub) {
+      throw new ForbiddenException('Ce pointage ne vous appartient pas');
+    }
+    await this.scope.assertSite(req.user, attendance.site.id);
+    return attendance;
+  }
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get()
-  list(
+  async list(
     @Req() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -36,29 +51,32 @@ export class AttendanceController {
       status: (status as any) ?? 'all',
       page: parseInt(page, 10) || 1,
       pageSize: parseInt(pageSize, 10) || 20,
+      siteIds: await this.scope.siteIds(req.user),
     });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('live-map')
-  getLiveMap() {
-    return this.service.getLiveMap();
+  async getLiveMap(@Req() req: any) {
+    return this.service.getLiveMap(await this.scope.siteIds(req.user));
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('anomalies')
-  getAnomalies() {
-    return this.service.getAnomalies();
+  async getAnomalies(@Req() req: any) {
+    return this.service.getAnomalies(await this.scope.siteIds(req.user));
   }
 
   @Get(':id')
-  detail(@Param('id') id: string) {
-    return this.service.findOne(id);
+  detail(@Req() req: any, @Param('id') id: string) {
+    return this.loadInScope(req, id);
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Post('manual')
-  createManual(@Req() req: any, @Body() dto: CreateManualAttendanceDto) {
+  async createManual(@Req() req: any, @Body() dto: CreateManualAttendanceDto) {
+    if (dto.interventionId) await this.scope.assertIntervention(req.user, dto.interventionId);
+    else await this.scope.assertSite(req.user, dto.siteId);
     const userId = req.user?.sub ?? req.user?.id;
     const role = req.user?.role ?? 'SUPERVISOR';
     return this.service.createManual({ ...dto, createdByUserId: userId, createdBy: role });
@@ -66,14 +84,24 @@ export class AttendanceController {
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateAttendanceDto) {
+  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateAttendanceDto) {
+    await this.loadInScope(req, id);
     const actorId = req.user?.sub ?? req.user?.id ?? 'unknown';
     return this.service.update(id, dto, actorId);
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
+  @Post(':id/regularize')
+  async regularize(@Req() req: any, @Param('id') id: string, @Body() dto: RegularizeAttendanceDto) {
+    await this.loadInScope(req, id);
+    const actorId = req.user?.sub ?? req.user?.id;
+    return this.service.regularize(id, dto, { id: actorId });
+  }
+
+  @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id/cancel')
-  cancel(@Param('id') id: string, @Body() dto: CancelAttendanceDto) {
+  async cancel(@Req() req: any, @Param('id') id: string, @Body() dto: CancelAttendanceDto) {
+    await this.loadInScope(req, id);
     return this.service.cancel(id, dto);
   }
 

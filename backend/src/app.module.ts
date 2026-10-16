@@ -16,6 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 import { InterventionsModule } from './interventions/interventions.module';
 import { PrismaModule } from './database/prisma.module';
+import { SupervisorScopeModule } from './common/supervisor-scope/supervisor-scope.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AnomaliesModule } from './anomalies/anomalies.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -34,6 +35,9 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { FormsModule } from './forms/forms.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { CategoriesModule } from './categories/categories.module';
+import { InboxModule } from './inbox/inbox.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
+import { SupervisionModule } from './supervision/supervision.module';
 
 @Module({
   imports: [
@@ -42,6 +46,7 @@ import { CategoriesModule } from './categories/categories.module';
       load: [AppConfig, DbConfig, AuthConfig],
     }),
     PrismaModule,
+    SupervisorScopeModule,
     AuthModule,
     UsersModule,
     SitesModule,
@@ -71,6 +76,9 @@ import { CategoriesModule } from './categories/categories.module';
     InvoicesModule,
     FormsModule,
     CategoriesModule,
+    SupervisionModule,
+    InboxModule,
+    MonitoringModule,
   ],
   controllers: [AppController],
 })

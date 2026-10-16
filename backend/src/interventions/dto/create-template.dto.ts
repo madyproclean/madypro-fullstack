@@ -73,4 +73,9 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /** Pas de passage les jours fériés. */
+  @IsOptional()
+  @IsBoolean()
+  skipHolidays?: boolean;
 }

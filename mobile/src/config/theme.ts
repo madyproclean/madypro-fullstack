@@ -4,6 +4,9 @@ export const theme = {
     inkLight: '#7B8781',
     muted: '#5C6864',
     primary: '#0f98eb',
+    /** Bleu foncé : fonds de boutons sous texte blanc (contraste suffisant, contrairement à primary). */
+    primaryDark: '#1B5CA0',
+    border: '#DDE5EF',
     primarySoft: '#E3F4FC',
     cream: '#F4F8FC',
     shell: '#FFFFFF',
@@ -20,6 +23,21 @@ export const theme = {
       absentSoft: '#F3DEDE',
       pending: '#7B8781',
       pendingSoft: '#E4E9E6',
+    },
+    // Tons de badge KPI — décoratifs/catégoriels, en miroir de
+    // frontend/src/styles/tokens.scss (--color-badge-*) pour garder les deux
+    // plateformes visuellement cohérentes.
+    badge: {
+      orange: '#C2610C',
+      orangeSoft: '#FDECDA',
+      blue: '#0f98eb',
+      blueSoft: '#E3F4FC',
+      yellow: '#9C7A18',
+      yellowSoft: '#FFF8DF',
+      green: '#2E8B57',
+      greenSoft: '#E1F1E7',
+      red: '#C24A3E',
+      redSoft: '#F3DEDE',
     },
   },
   fonts: {

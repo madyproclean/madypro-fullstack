@@ -1,0 +1,178 @@
+@use './tokens.scss';
+@use './layout.scss';
+@use './components.scss';
+@use './components/form-controls.scss';
+@use './components/_photo-grid.scss';
+@use './main.scss';
+
+:root {
+  font-family: 'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #f4f8fc;
+  color: #020912;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  line-height: 1.5;
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+p {
+  margin-top: 0;
+  color: var(--color-muted);
+}
+
+a {
+  color: inherit;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.stats-grid {
+  align-items: stretch;
+}
+
+.page-grid--charts {
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  margin-top: 1.5rem;
+  align-items: stretch;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 1200;
+  padding: 1rem;
+}
+
+.modal-card {
+  background: #fff;
+  border-radius: 1.5rem;
+  width: min(900px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 25px 45px rgba(2, 9, 18, 0.18);
+  border: 1px solid var(--color-border);
+  padding: 1.5rem;
+}
+
+// Carte KPI à badge icône coloré (composants/ui/StatCard.tsx) — style GXON :
+// badge circulaire, gros nombre, libellé, tendance optionnelle.
+.stat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-shell);
+  box-shadow: var(--shadow-soft);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  position: relative;
+}
+
+.stat-card__badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-pill);
+}
+
+.stat-card__badge--orange {
+  background: var(--color-badge-orange-bg);
+  color: var(--color-badge-orange);
+}
+
+.stat-card__badge--blue {
+  background: var(--color-badge-blue-bg);
+  color: var(--color-badge-blue);
+}
+
+.stat-card__badge--yellow {
+  background: var(--color-badge-yellow-bg);
+  color: var(--color-badge-yellow);
+}
+
+.stat-card__badge--green {
+  background: var(--color-badge-green-bg);
+  color: var(--color-badge-green);
+}
+
+.stat-card__badge--red {
+  background: var(--color-badge-red-bg);
+  color: var(--color-badge-red);
+}
+
+.stat-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.stat-card__value {
+  font-size: clamp(1.5rem, 2.4vw, 1.9rem);
+  font-weight: 700;
+  color: var(--color-ink);
+  line-height: 1.1;
+}
+
+.stat-card__label {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.stat-card__trend {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.stat-card__trend--up {
+  color: var(--color-success);
+}
+
+.stat-card__trend--down {
+  color: var(--color-danger);
+}
+
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--color-mist);
+  color: var(--color-accent-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+}

@@ -40,9 +40,10 @@ export class FormsService {
     });
   }
 
-  findSubmissions(formId: string) {
+  /** `siteIds` restreint au périmètre d'un superviseur (réponses rattachées à ses sites). */
+  findSubmissions(formId: string, siteIds: string[] | null = null) {
     return this.prisma.customFormSubmission.findMany({
-      where: { formId },
+      where: { formId, ...(siteIds ? { siteId: { in: siteIds } } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }

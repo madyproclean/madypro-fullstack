@@ -30,9 +30,12 @@ export class ShiftSwapsService {
       .map((u) => ({ id: u.id, firstName: u.firstName, lastName: u.lastName }));
   }
 
-  findAll(userId?: string) {
+  /** `siteIds` restreint aux échanges portant sur les interventions de ces sites (superviseur). */
+  findAll(userId?: string, siteIds: string[] | null = null) {
     return this.prisma.shiftSwapRequest.findMany({
-      where: userId
+      where: siteIds
+        ? { intervention: { siteId: { in: siteIds } }, ...(userId ? { OR: [{ requesterId: userId }, { targetUserId: userId }] } : {}) }
+        : userId
         ? {
             OR: [
               { requesterId: userId },
@@ -149,6 +152,26 @@ export class ShiftSwapsService {
         update: {},
         create: { interventionId: request.interventionId, userId },
       });
+      // Le gabarit reste la référence : l'échange est noté comme exception du jour sur son créneau.
+      if (intervention.generatedFromTemplateId && intervention.generatedFromStopId) {
+        const agentIds = (await tx.interventionAssignment.findMany({
+          where: { interventionId: request.interventionId },
+          select: { userId: true },
+        })).map((a) => a.userId);
+        await tx.templateException.upsert({
+          where: { stopId_date: { stopId: intervention.generatedFromStopId, date: intervention.date } },
+          create: {
+            templateId: intervention.generatedFromTemplateId,
+            stopId: intervention.generatedFromStopId,
+            date: intervention.date,
+            kind: 'REPLACE_AGENTS',
+            agentIds,
+            reason: 'Échange entre agents',
+            createdById: userId,
+          },
+          update: { kind: 'REPLACE_AGENTS', agentIds, reason: 'Échange entre agents', createdById: userId },
+        });
+      }
 
       return tx.shiftSwapRequest.findUniqueOrThrow({ where: { id } });
     });

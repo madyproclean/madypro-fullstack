@@ -159,3 +159,38 @@ export function findStopConflicts(
   }
   return conflicts;
 }
+
+export type TemplateExceptionLike = {
+  stopId: string;
+  /** YYYY-MM-DD */
+  date: string;
+  kind: 'CANCEL' | 'REPLACE_AGENTS';
+  agentIds: string[];
+  reason?: string | null;
+};
+
+/**
+ * Applique les exceptions datées aux occurrences d'un gabarit : un créneau annulé ce jour-là
+ * disparaît, un remplacement change les agents de ce seul jour. Le gabarit reste inchangé.
+ */
+export function applyTemplateExceptions<T extends { date: string; stopId: string; agentIds: string[] }>(
+  occurrences: T[],
+  exceptions: TemplateExceptionLike[],
+): (T & { exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] } })[] {
+  if (!exceptions.length) return occurrences;
+  const byKey = new Map(exceptions.map((e) => [`${e.date}:${e.stopId}`, e]));
+  const result: (T & { exception?: { kind: 'REPLACE_AGENTS'; reason?: string | null; originalAgentIds: string[] } })[] = [];
+  for (const occ of occurrences) {
+    const exception = byKey.get(`${occ.date}:${occ.stopId}`);
+    if (!exception) {
+      result.push(occ);
+    } else if (exception.kind === 'REPLACE_AGENTS') {
+      result.push({
+        ...occ,
+        agentIds: exception.agentIds,
+        exception: { kind: 'REPLACE_AGENTS', reason: exception.reason, originalAgentIds: occ.agentIds },
+      });
+    }
+  }
+  return result;
+}

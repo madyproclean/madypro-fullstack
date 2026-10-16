@@ -1,3 +1,4 @@
+import NetInfo from '@react-native-community/netinfo';
 import { env } from '../../config/env';
 
 type FetchArgs = {
@@ -15,6 +16,47 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
+
+/**
+ * Le serveur n'a pas pu être joint (pas de réseau, coupure). Distinct d'ApiError : la requête
+ * n'a pas été traitée, ce qui permet à l'appelant de se replier (cache, file d'attente agent).
+ */
+export class NetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+
+// Joignabilité du serveur observée sur les requêtes réelles : plus fiable que l'état du Wi-Fi seul
+// (réseau présent mais sans accès, portail captif, serveur injoignable).
+let serverReachable = true;
+const reachabilityListeners = new Set<(reachable: boolean) => void>();
+
+function setServerReachable(reachable: boolean) {
+  if (reachable === serverReachable) return;
+  serverReachable = reachable;
+  reachabilityListeners.forEach((listener) => listener(reachable));
+}
+
+export function isServerReachable() {
+  return serverReachable;
+}
+
+/** Abonnement aux changements de joignabilité ; renvoie la fonction de désabonnement. */
+export function onServerReachabilityChange(listener: (reachable: boolean) => void) {
+  reachabilityListeners.add(listener);
+  return () => {
+    reachabilityListeners.delete(listener);
+  };
+}
+
+// L'appareil se sait sans réseau (vérifié avant l'envoi).
+const OFFLINE_ACTION_MESSAGE = "Pas de connexion : rien n'a été envoyé. Réessayez quand le réseau sera revenu.";
+// La requête est partie mais le serveur n'a pas répondu (réseau coupé, serveur arrêté ou injoignable).
+const UNREACHABLE_ACTION_MESSAGE =
+  "Impossible de joindre le serveur : rien n'a été envoyé. Vérifiez le réseau, puis réessayez.";
+const UNREACHABLE_READ_MESSAGE = 'Impossible de joindre le serveur. Vérifiez le réseau, puis réessayez.';
 
 let unauthorizedHandler: (() => void) | null = null;
 
@@ -40,6 +82,13 @@ const buildUrl = (path: string) => {
 const REQUEST_TIMEOUT_MS = 40000;
 
 export async function apiFetch<T>({ path, token, options = {} }: FetchArgs): Promise<T> {
+  const isAction = Boolean(options.method && options.method.toUpperCase() !== 'GET');
+  // Une action (validation, demande, message) sans réseau est refusée tout de suite avec un
+  // message clair, plutôt que d'attendre l'expiration de la requête.
+  if (isAction) {
+    const state = await NetInfo.fetch().catch(() => null);
+    if (state?.isConnected === false) throw new NetworkError(OFFLINE_ACTION_MESSAGE);
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response: Response;
@@ -54,13 +103,20 @@ export async function apiFetch<T>({ path, token, options = {} }: FetchArgs): Pro
       },
     });
   } catch (err) {
+    setServerReachable(false);
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Le serveur ne répond pas. Vérifiez votre connexion et réessayez.');
+      throw new NetworkError(
+        isAction
+          ? "Le serveur ne répond pas : l'action n'a peut-être pas été enregistrée. Vérifiez avant de recommencer."
+          : 'Le serveur ne répond pas. Vérifiez votre connexion et réessayez.',
+      );
     }
-    throw err;
+    // fetch échoue sans réponse (« Failed to fetch », « Network request failed ») : rien n'est parti.
+    throw new NetworkError(isAction ? UNREACHABLE_ACTION_MESSAGE : UNREACHABLE_READ_MESSAGE);
   } finally {
     clearTimeout(timeout);
   }
+  setServerReachable(true);
 
   if (!response.ok) {
     let message = response.statusText;

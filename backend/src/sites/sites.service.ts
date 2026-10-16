@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException, OnModuleInit } from '@nestjs/common';
 import { Site } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as QRCode from 'qrcode';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SiteEntity } from './entities/site.entity';
 import { CreateSiteDto } from './dto/create-site.dto';
@@ -20,6 +21,9 @@ type SiteView = SiteEntity & {
 };
 
 type SiteFilters = {
+  active?: boolean;
+  /** Restreint aux sites donnés (périmètre superviseur). */
+  siteIds?: string[] | null;
   page?: number;
   pageSize?: number;
 };
@@ -69,6 +73,24 @@ export class SitesService implements OnModuleInit {
     };
   }
 
+  /**
+   * Un agent ne consulte que les sites où il travaille : une mission sur les 60 derniers jours ou à
+   * venir, ou un créneau du gabarit du site (le code d'accès figure sur la fiche).
+   */
+  async assertAgentWorksOnSite(siteId: string, userId: string) {
+    const since = new Date(Date.now() - 60 * 86_400_000);
+    const [assignment, stop] = await Promise.all([
+      this.prisma.interventionAssignment.findFirst({
+        where: { userId, intervention: { siteId, date: { gte: since } } },
+        select: { userId: true },
+      }),
+      this.prisma.templateStop.findFirst({ where: { agentIds: { has: userId }, template: { siteId } }, select: { id: true } }),
+    ]);
+    if (!assignment && !stop) {
+      throw new ForbiddenException("Ce site ne fait pas partie de vos missions");
+    }
+  }
+
   private ensureExists(id: string) {
     const site = this.sites.find((item) => item.id === id);
     if (!site) {
@@ -100,14 +122,17 @@ export class SitesService implements OnModuleInit {
   async findAll(filters: SiteFilters = { page: 1, pageSize: 20 }) {
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 20;
+    const where: Prisma.SiteWhereInput = filters.active === undefined ? {} : { active: filters.active };
+    if (filters.siteIds) where.id = { in: filters.siteIds };
     const [records, total] = await Promise.all([
       this.prisma.site.findMany({
+        where,
         include: { supervisors: true },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.site.count(),
+      this.prisma.site.count({ where }),
     ]);
     const items = records.map((record) => this.present(this.mapRecord(record)));
     return { items, total, page, pageSize };
@@ -255,6 +280,7 @@ export class SitesService implements OnModuleInit {
         startTime: dto.startTime,
         endTime: dto.endTime,
         active: dto.active ?? true,
+        unitPriceHT: dto.unitPriceHT ?? null,
       },
       include: { category: true, checklist: true },
     });
@@ -285,6 +311,7 @@ export class SitesService implements OnModuleInit {
         ...(dto.startTime !== undefined ? { startTime: dto.startTime } : {}),
         ...(dto.endTime !== undefined ? { endTime: dto.endTime } : {}),
         ...(dto.active !== undefined ? { active: dto.active } : {}),
+        ...(dto.unitPriceHT !== undefined ? { unitPriceHT: dto.unitPriceHT } : {}),
       },
       include: { category: true, checklist: true },
     });
@@ -386,11 +413,11 @@ export class SitesService implements OnModuleInit {
     return this.prisma.siteContract.findMany({ where: { siteId }, orderBy: { endDate: 'asc' } });
   }
 
-  findExpiringContracts(days = 30) {
+  findExpiringContracts(days = 30, siteIds: string[] | null = null) {
     const now = new Date();
     const horizon = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
     return this.prisma.siteContract.findMany({
-      where: { endDate: { gte: now, lte: horizon } },
+      where: { endDate: { gte: now, lte: horizon }, ...(siteIds ? { siteId: { in: siteIds } } : {}) },
       orderBy: { endDate: 'asc' },
       include: { site: { select: { id: true, name: true } } },
     });

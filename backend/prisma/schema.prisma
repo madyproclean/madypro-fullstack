@@ -81,6 +81,10 @@ enum AuditAction {
   CREATE_TEMPLATE_STOP
   UPDATE_TEMPLATE_STOP_AGENTS
   DELETE_TEMPLATE_STOP
+  CREATE_TEMPLATE_EXCEPTION
+  DELETE_TEMPLATE_EXCEPTION
+  RESTORE_TEMPLATE_REVISION
+  PROPOSE_TEMPLATE_CHANGE
   CREATE_APPROVAL_REQUEST
   APPROVE_REQUEST
   REJECT_REQUEST
@@ -124,6 +128,7 @@ enum ApprovalActionType {
   CANCEL_INTERVENTION
   CREATE_TEMPLATE_BATCH
   VALIDATE_TEMPLATE
+  CANCEL_OCCURRENCE
 }
 
 enum ApprovalStatus {
@@ -174,6 +179,7 @@ model User {
   dashboardLayout             UserDashboardLayout?
   approvalRequestsMade        ApprovalRequest[]        @relation("ApprovalRequester")
   approvalRequestsReviewed    ApprovalRequest[]        @relation("ApprovalReviewer")
+  qualityInspections          QualityInspection[]      @relation("QualityInspector")
 }
 
 model ApprovalRequest {
@@ -343,6 +349,7 @@ model Site {
   quotes                 Quote[]
   invoices               Invoice[]
   clientPortalTokens     ClientPortalToken[]
+  qualityInspections     QualityInspection[]
 }
 
 model SiteContract {
@@ -359,16 +366,17 @@ model SiteContract {
 }
 
 model InventoryItem {
-  id           String   @id @default(cuid())
+  id           String              @id @default(cuid())
   siteId       String
-  site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site         Site                @relation(fields: [siteId], references: [id], onDelete: Cascade)
   name         String
   barcode      String?
-  unit         String   @default("unité")
-  quantity     Int      @default(0)
-  minThreshold Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  unit         String              @default("unité")
+  quantity     Int                 @default(0)
+  minThreshold Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  movements    InventoryMovement[]
 }
 
 model SiteZone {
@@ -395,17 +403,19 @@ model InterventionCategory {
 }
 
 model SiteCategory {
-  id         String                      @id @default(cuid())
-  siteId     String
-  site       Site                        @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  categoryId String
-  category   InterventionCategory        @relation(fields: [categoryId], references: [id])
-  startTime  String
-  endTime    String
-  active     Boolean                     @default(true)
-  createdAt  DateTime                    @default(now())
-  updatedAt  DateTime                    @updatedAt
-  checklist  SiteCategoryChecklistItem[]
+  id          String                      @id @default(cuid())
+  siteId      String
+  site        Site                        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    InterventionCategory        @relation(fields: [categoryId], references: [id])
+  startTime   String
+  endTime     String
+  active      Boolean                     @default(true)
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  checklist   SiteCategoryChecklistItem[]
+  /// Prix HT d'un passage, pour préparer la facture du mois.
+  unitPriceHT Float?
 
   @@unique([siteId, categoryId])
 }
@@ -461,6 +471,10 @@ model Intervention {
   quotes                  Quote[]
 
   @@index([batchId])
+  @@index([date])
+  @@index([siteId, date])
+  @@index([generatedFromStopId, date])
+  @@index([status, date])
 }
 
 model InterventionChecklistItem {
@@ -474,6 +488,8 @@ model InterventionChecklistItem {
   completedBy    String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@index([interventionId])
 }
 
 model InterventionAssignment {
@@ -483,6 +499,7 @@ model InterventionAssignment {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([interventionId, userId])
+  @@index([userId])
 }
 
 model InterventionTruck {
@@ -493,20 +510,79 @@ model InterventionTruck {
 }
 
 model InterventionTemplate {
-  id            String         @id @default(cuid())
-  label         String
-  siteId        String         @unique
-  site          Site           @relation(fields: [siteId], references: [id])
-  startDate     DateTime       @default(now())
-  endDate       DateTime?
-  active        Boolean        @default(true)
-  validatedAt   DateTime?
-  validatedById String?
-  validatedBy   User?          @relation("TemplateValidator", fields: [validatedById], references: [id])
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  stops         TemplateStop[]
-  interventions Intervention[]
+  id                   String              @id @default(cuid())
+  label                String
+  siteId               String              @unique
+  site                 Site                @relation(fields: [siteId], references: [id])
+  startDate            DateTime            @default(now())
+  endDate              DateTime?
+  active               Boolean             @default(true)
+  validatedAt          DateTime?
+  validatedById        String?
+  validatedBy          User?               @relation("TemplateValidator", fields: [validatedById], references: [id])
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  stops                TemplateStop[]
+  interventions        Intervention[]
+  /// Modification proposée par un superviseur, en attente de validation : la version actuelle reste active.
+  pendingVersion       Json?
+  pendingRequestedById String?
+  pendingRequestedAt   DateTime?
+  revisions            TemplateRevision[]
+  exceptions           TemplateException[]
+  pauses               TemplatePause[]
+  /// Pas de passage les jours fériés (France).
+  skipHolidays         Boolean             @default(false)
+}
+
+/// Période sans passage (fermeture annuelle, travaux, saison) : aucune mission générée.
+model TemplatePause {
+  id          String               @id @default(cuid())
+  templateId  String
+  template    InterventionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  from        DateTime
+  to          DateTime
+  reason      String?
+  createdById String?
+  createdAt   DateTime             @default(now())
+
+  @@index([templateId, from])
+}
+
+/// Photo d'une version appliquée d'un gabarit (historique, retour en arrière).
+model TemplateRevision {
+  id           String               @id @default(cuid())
+  templateId   String
+  template     InterventionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  snapshot     Json
+  authorId     String?
+  approvedById String?
+  note         String?
+  createdAt    DateTime             @default(now())
+
+  @@index([templateId, createdAt])
+}
+
+enum TemplateExceptionKind {
+  CANCEL
+  REPLACE_AGENTS
+}
+
+/// Exception datée d'un créneau de gabarit : un seul jour change, le gabarit reste la référence.
+model TemplateException {
+  id          String                @id @default(cuid())
+  templateId  String
+  template    InterventionTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  stopId      String
+  date        DateTime
+  kind        TemplateExceptionKind
+  agentIds    String[]              @default([])
+  reason      String?
+  createdById String?
+  createdAt   DateTime              @default(now())
+
+  @@unique([stopId, date])
+  @@index([templateId, date])
 }
 
 model TemplateStop {
@@ -558,6 +634,10 @@ model Attendance {
   updatedAt         DateTime         @updatedAt
   user              User             @relation(fields: [userId], references: [id])
   intervention      Intervention     @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+
+  @@index([interventionId])
+  @@index([userId, date])
+  @@index([date])
 }
 
 model Absence {
@@ -582,6 +662,9 @@ model Absence {
   requiresSecondApproval Boolean       @default(false)
   level1ApprovedBy       String?
   level1ApprovedAt       DateTime?
+
+  @@index([userId, status])
+  @@index([status])
 }
 
 model LeaveAllocation {
@@ -621,6 +704,8 @@ model Notification {
   escalatedAt          DateTime?
   createdAt            DateTime             @default(now())
   reads                NotificationRead[]
+
+  @@index([targetId, createdAt])
 }
 
 enum NotificationPriority {
@@ -650,6 +735,8 @@ model ChatMessage {
   body         String
   createdAt    DateTime  @default(now())
   readAt       DateTime?
+
+  @@index([threadUserId, createdAt])
 }
 
 model NotificationRead {
@@ -675,6 +762,9 @@ model Anomaly {
   status         AnomalyStatus @default(NEW)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  @@index([interventionId])
+  @@index([status])
 }
 
 model PushToken {
@@ -701,6 +791,9 @@ model AuditLog {
   before     Json?
   after      Json?
   createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
 
 enum QuoteStatus {
@@ -845,4 +938,55 @@ model UserDashboardLayout {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   layout    Json
   updatedAt DateTime @updatedAt
+}
+
+/// Contrôle qualité d'un site par le superviseur : grille notée, commentaire, photos.
+model QualityInspection {
+  id             String   @id @default(cuid())
+  siteId         String
+  site           Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  inspectorId    String
+  inspector      User     @relation("QualityInspector", fields: [inspectorId], references: [id])
+  interventionId String?
+  /// Note sur 100 calculée depuis la grille.
+  score          Int
+  /// [{ label, rating: 'GOOD' | 'AVERAGE' | 'POOR', comment? }]
+  items          Json
+  comment        String?
+  photos         String[] @default([])
+  createdAt      DateTime @default(now())
+
+  @@index([siteId, createdAt])
+}
+
+/// Mouvement de stock (consommation, réassort, inventaire) avec son auteur.
+model InventoryMovement {
+  id            String        @id @default(cuid())
+  itemId        String
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  delta         Int
+  quantityAfter Int
+  userId        String?
+  reason        String?
+  createdAt     DateTime      @default(now())
+
+  @@index([itemId, createdAt])
+}
+
+/// Erreur relevée par le serveur, le site web ou l'application (regroupée par empreinte).
+model ErrorEvent {
+  id          String    @id @default(cuid())
+  fingerprint String    @unique
+  source      String
+  message     String
+  stack       String?
+  path        String?
+  userId      String?
+  appVersion  String?
+  count       Int       @default(1)
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([lastSeenAt])
 }

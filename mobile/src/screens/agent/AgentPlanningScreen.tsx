@@ -6,7 +6,10 @@ import { HeaderLayout } from '@/components/layout/HeaderLayout';
 import { InterventionCard } from '@/components/cards/InterventionCard';
 import { theme } from '@/config/theme';
 import { Intervention } from '@/types/intervention';
-import { fetchInterventions } from '@/services/api/interventions.api';
+import { isPlannedOnly, listMyMissions } from '@/services/api/interventions.api';
+import { agentCache } from '@/services/agentCache';
+import { useToast } from '@/context/ToastContext';
+import { useI18n } from '@/i18n';
 import { useAuthContext } from '@/context/AuthContext';
 import { useStaggeredFadeIn } from '@/hooks/useStaggeredFadeIn';
 
@@ -53,6 +56,8 @@ const dayLabel = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'long', d
 
 export default function AgentPlanningScreen() {
   const { token, user } = useAuthContext();
+  const { showToast } = useToast();
+  const { t } = useI18n();
   const navigation = useNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>('liste');
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('semaine');
@@ -79,8 +84,9 @@ export default function AgentPlanningScreen() {
     if (!token || !user) return;
     setLoading(true);
     setError(null);
-    fetchInterventions(token, { startDate: rangeStart, endDate: rangeEnd, agentId: user.id })
-      .then((items) => setInterventions(items))
+    agentCache
+      .loadWithCache(user.id, `planning:${rangeStart}:${rangeEnd}`, () => listMyMissions(token, rangeStart, rangeEnd, user.id))
+      .then(({ value }) => setInterventions(value))
       .catch((err) => setError(err instanceof Error ? err.message : 'Impossible de charger le planning'))
       .finally(() => setLoading(false));
   }, [token, user, rangeStart, rangeEnd]);
@@ -114,6 +120,10 @@ export default function AgentPlanningScreen() {
   }, [interventions]);
 
   const goToIntervention = (intervention: Intervention) => {
+    if (isPlannedOnly(intervention)) {
+      showToast(intervention.siteName, t('planning.notYet'), 'info');
+      return;
+    }
     (navigation as any).navigate('AgentIntervention', { id: intervention.id });
   };
 

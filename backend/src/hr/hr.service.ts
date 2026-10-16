@@ -8,18 +8,37 @@ import { CreateEmployeeDocumentDto } from './dto/create-employee-document.dto';
 export class HrService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findCertifications(userId?: string) {
+  private userFilter(userId: string | undefined, userIds: string[] | null) {
+    if (!userIds) return userId ? { userId } : {};
+    if (userId) return { userId: userIds.includes(userId) ? userId : '__none__' };
+    return { userId: { in: userIds } };
+  }
+
+  async getCertificationUserId(id: string): Promise<string> {
+    const existing = await this.prisma.certification.findUnique({ where: { id }, select: { userId: true } });
+    if (!existing) throw new NotFoundException('Certification introuvable');
+    return existing.userId;
+  }
+
+  async getDocumentUserId(id: string): Promise<string> {
+    const existing = await this.prisma.employeeDocument.findUnique({ where: { id }, select: { userId: true } });
+    if (!existing) throw new NotFoundException('Document introuvable');
+    return existing.userId;
+  }
+
+  /** `userIds` restreint au périmètre d'un superviseur. */
+  findCertifications(userId?: string, userIds: string[] | null = null) {
     return this.prisma.certification.findMany({
-      where: userId ? { userId } : undefined,
+      where: this.userFilter(userId, userIds),
       orderBy: { expiresAt: 'asc' },
     });
   }
 
-  findExpiringCertifications(days = 30) {
+  findExpiringCertifications(days = 30, userIds: string[] | null = null) {
     const now = new Date();
     const horizon = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
     return this.prisma.certification.findMany({
-      where: { expiresAt: { gte: now, lte: horizon } },
+      where: { expiresAt: { gte: now, lte: horizon }, ...this.userFilter(undefined, userIds) },
       orderBy: { expiresAt: 'asc' },
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
     });
@@ -60,9 +79,9 @@ export class HrService {
     return { deleted: true };
   }
 
-  findDocuments(userId?: string) {
+  findDocuments(userId?: string, userIds: string[] | null = null) {
     return this.prisma.employeeDocument.findMany({
-      where: userId ? { userId } : undefined,
+      where: this.userFilter(userId, userIds),
       orderBy: { createdAt: 'desc' },
     });
   }

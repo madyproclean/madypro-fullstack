@@ -39,6 +39,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [devicePushToken, setDevicePushToken] = useState<string | null>(null);
   const tokenRef = React.useRef(token);
   tokenRef.current = token;
+  // Lu au moment du tap : les écouteurs de notification sont enregistrés une seule fois.
+  const roleRef = React.useRef(user?.role?.toUpperCase());
+  roleRef.current = user?.role?.toUpperCase();
 
   const addNotification = useCallback((notification: NotificationItem) => {
     setItems((prev) => [notification, ...prev]);
@@ -58,7 +61,32 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (!navigationRef.isReady() || !data || typeof data !== 'object') {
         return;
       }
-      const payload = data as { path?: string; interventionId?: string | number; anomalyId?: string };
+      const payload = data as {
+        path?: string;
+        interventionId?: string | number;
+        anomalyId?: string;
+        absenceId?: string;
+        threadUserId?: string;
+      };
+      if (roleRef.current === 'SUPERVISOR') {
+        // Espace superviseur : chaque alerte ouvre sa rubrique, jamais un écran agent.
+        if (payload.interventionId) {
+          navigationRef.navigate('Supervisor', {
+            screen: 'SupervisorMissions',
+            params: { interventionId: String(payload.interventionId) },
+          });
+        } else if (payload.absenceId) {
+          navigationRef.navigate('Supervisor', { screen: 'SupervisorValidations', params: { absenceId: payload.absenceId } });
+        } else if (payload.path === 'requests') {
+          navigationRef.navigate('Supervisor', { screen: 'SupervisorValidations', params: { tab: 'requests' } });
+        } else if (payload.threadUserId) {
+          navigationRef.navigate('Supervisor', { screen: 'SupervisorMessages', params: { threadUserId: payload.threadUserId } });
+        } else {
+          navigationRef.navigate('Supervisor', { screen: 'SupervisorToday' });
+        }
+        return;
+      }
+      if (roleRef.current !== 'AGENT') return;
       if (payload.path) {
         if (AGENT_TAB_SCREENS.has(payload.path as keyof AgentTabParamList)) {
           navigateToAgentTab(payload.path as keyof AgentTabParamList);

@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateSiteCategoryDto {
   @IsString()
@@ -13,4 +13,10 @@ export class CreateSiteCategoryDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /** Prix HT d'un passage (préparation de la facture du mois). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitPriceHT?: number | null;
 }

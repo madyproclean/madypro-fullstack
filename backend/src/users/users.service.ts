@@ -273,8 +273,11 @@ ${apkSection}`,
     return this.toPublic(updated);
   }
 
+  /** Insensible aux espaces autour et à la casse (saisie sur mobile : majuscule automatique, copier-coller). */
   findByEmail(email: string): UserEntity | undefined {
-    return this.users.find((user) => user.email === email);
+    const typed = email.trim();
+    const wanted = typed.toLowerCase();
+    return this.users.find((user) => user.email === typed) ?? this.users.find((user) => user.email.toLowerCase() === wanted);
   }
 
   async setPasswordResetToken(id: string, tokenHash: string | null, expiresAt: Date | null) {

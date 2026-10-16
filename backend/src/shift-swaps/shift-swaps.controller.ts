@@ -1,21 +1,25 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { ShiftSwapsService } from './shift-swaps.service';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CreateShiftSwapDto } from './dto/create-shift-swap.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('shift-swaps')
 export class ShiftSwapsController {
-  constructor(private readonly shiftSwapsService: ShiftSwapsService) {}
+  constructor(
+    private readonly shiftSwapsService: ShiftSwapsService,
+    private readonly scope: SupervisorScopeService,
+  ) {}
 
   @Get()
-  findAll(@Query('userId') userId: string | undefined, @Req() req: Request) {
+  async findAll(@Query('userId') userId: string | undefined, @Req() req: Request) {
     const user = req.user as any;
     // Un agent ne peut voir que ses propres demandes (le paramètre userId est ignoré pour lui) ;
     // admin/superviseur gardent la vue globale nécessaire à l'arbitrage (userId optionnel).
     const effectiveUserId = user?.role === 'AGENT' ? user?.sub : userId;
-    return this.shiftSwapsService.findAll(effectiveUserId);
+    return this.shiftSwapsService.findAll(effectiveUserId, await this.scope.siteIds(user));
   }
 
   @Get('colleagues')

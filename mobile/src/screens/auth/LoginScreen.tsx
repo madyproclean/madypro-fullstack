@@ -33,7 +33,16 @@ export default function LoginScreen({ navigation }: Props) {
       <Header title="Connexion" subtitle="Accédez à vos missions et pointages du jour." accent="" />
       <Card style={styles.card}>
         {error && <Text style={styles.error}>{error}</Text>}
-        <Input label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" />
+        <Input
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          textContentType="username"
+          autoComplete="email"
+        />
         <Input label="Mot de passe" value={password} onChangeText={setPassword} secureTextEntry />
         <Button
           fullWidth

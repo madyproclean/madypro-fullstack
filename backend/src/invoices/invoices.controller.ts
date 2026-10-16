@@ -10,7 +10,7 @@ import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
 import { RecordInvoicePaymentDto } from './dto/record-invoice-payment.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'SUPERVISOR')
+@Roles('ADMIN')
 @Controller('invoices')
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
@@ -31,6 +31,12 @@ export class InvoicesController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${id}.pdf"`);
     res.send(buffer);
+  }
+
+  /** Brouillon de facture du mois à partir des passages réalisés (jamais envoyé automatiquement). */
+  @Post('from-missions')
+  draftFromMissions(@Body('siteId') siteId: string, @Body('month') month: string, @Req() req: any) {
+    return this.invoicesService.draftFromMissions(siteId, month, req.user.sub);
   }
 
   @Post()

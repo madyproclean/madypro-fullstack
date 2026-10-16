@@ -1,7 +1,8 @@
-import { IsNumber, IsString, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsNotEmpty, IsString, IsOptional, Max, Min } from 'class-validator';
 
 export class LineItemDto {
   @IsString()
+  @IsNotEmpty()
   description!: string;
 
   @IsNumber()
@@ -15,5 +16,6 @@ export class LineItemDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(100)
   vatRatePercent?: number;
 }

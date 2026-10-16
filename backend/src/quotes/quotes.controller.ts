@@ -9,7 +9,7 @@ import { UpdateQuoteDto } from './dto/update-quote.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'SUPERVISOR')
+@Roles('ADMIN')
 @Controller('quotes')
 export class QuotesController {
   constructor(private readonly quotesService: QuotesService) {}

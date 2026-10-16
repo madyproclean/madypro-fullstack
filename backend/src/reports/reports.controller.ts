@@ -4,12 +4,29 @@ import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ClientReportService } from './client-report.service';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly service: ReportsService) {}
+  constructor(
+    private readonly service: ReportsService,
+    private readonly clientReports: ClientReportService,
+    private readonly scope: SupervisorScopeService,
+  ) {}
+
+  /** Compte rendu mensuel du client d'un site (PDF à télécharger ; rien n'est envoyé par e-mail). */
+  @Get('client-report/pdf')
+  @Roles('ADMIN', 'SUPERVISOR')
+  async clientReportPdf(@Req() req: Request, @Res() res: Response, @Query('siteId') siteId: string, @Query('month') month: string) {
+    await this.scope.assertSite(req.user as any, siteId);
+    const { buffer, filename } = await this.clientReports.pdf(siteId, month);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
+  }
 
   @Get('summary')
   summary(@Query('date') date?: string) {
@@ -30,6 +47,19 @@ export class ReportsController {
     const end = endDate ?? today.toISOString().slice(0, 10);
     const start = startDate ?? new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     return this.service.sendReportEmail(start, end, 'Rapport (envoi manuel)');
+  }
+
+  /** Préparation de paie : normal, nuit, dimanche, férié, heures au-delà de 35 h — fichier tableur. */
+  @Get('payroll-breakdown.csv')
+  async payrollBreakdownCsv(
+    @Query('startDate') startDate: string | undefined,
+    @Query('endDate') endDate: string | undefined,
+    @Res() res: Response,
+  ) {
+    const csv = await this.service.payrollBreakdownCsv(startDate, endDate);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="preparation-paie-${startDate ?? 'periode'}.csv"`);
+    res.send(csv);
   }
 
   @Get('payroll')

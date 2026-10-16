@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   ScrollView,
   StyleSheet,
@@ -41,6 +42,10 @@ import { getActualDate, buildDateTime, formatTime } from '@/utils/interventionTi
 import { capturePhotoBase64 } from '@/utils/photo';
 import { StatusPill, StatusTone } from '@/components/ui/StatusPill';
 import { SwipeToConfirm } from '@/components/ui/SwipeToConfirm';
+import { agentCache } from '@/services/agentCache';
+import { NetworkError } from '@/services/api/client';
+import { useI18n } from '@/i18n';
+import { openDirections } from '@/components/agent/RouteCard';
 
 const TYPE_LABELS = {
   REGULAR: 'Intervention régulière',
@@ -95,6 +100,7 @@ export default function InterventionDetailScreen() {
   } = useSyncContext();
   const { token, user } = useAuthContext();
   const { showToast } = useToast();
+  const { t } = useI18n();
   const [site, setSite] = React.useState<Site | null>(null);
   const [isMarkingArrival, setMarkingArrival] = React.useState(false);
   const [arrivalRecorded, setArrivalRecorded] = React.useState(false);
@@ -116,7 +122,8 @@ export default function InterventionDetailScreen() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const data = await getInterventionById(token, id);
+        // Gardée sur le téléphone pour rester consultable sans réseau.
+        const { value: data } = await agentCache.loadWithCache(user?.id, `mission:${id}`, () => getInterventionById(token, id));
         if (!cancelled) {
           setIntervention(data);
           const mine = data?.agents?.find((a) => a.id === user?.id);
@@ -136,7 +143,7 @@ export default function InterventionDetailScreen() {
           }
           if (data) {
             try {
-              const rawSite = await getSite(token, data.siteId);
+              const { value: rawSite } = await agentCache.loadWithCache(user?.id, `site:${data.siteId}`, () => getSite(token, data.siteId));
               if (!cancelled) {
                 const toNumber = (val: any) => {
                   const n = Number(val);
@@ -485,6 +492,14 @@ export default function InterventionDetailScreen() {
     setProblemModalVisible(true);
   }, []);
 
+  // Ouverture depuis l'accueil (« Signaler un problème ») : le formulaire s'affiche aussitôt.
+  React.useEffect(() => {
+    if (route.params.openProblem && intervention) {
+      setProblemModalVisible(true);
+      navigation.setParams({ openProblem: undefined });
+    }
+  }, [route.params.openProblem, intervention, navigation]);
+
   const handleArrival = React.useCallback(async () => {
     if (!intervention || !token || !user) return;
     if (!canMarkArrival && arrivalAllowedFrom) {
@@ -603,8 +618,7 @@ export default function InterventionDetailScreen() {
     if (!site) {
       return;
     }
-    const query = encodeURIComponent(`${site.name} ${site.address}`);
-    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
+    openDirections(`${site.name} ${site.address}`, site.latitude, site.longitude);
   }, [site]);
 
   // Heartbeat interval to keep backend updated while running
@@ -750,21 +764,65 @@ export default function InterventionDetailScreen() {
           )}
         </Section>
 
-        <Section title="Site">
+        <Section title={t('mission.site')}>
           <View style={styles.iconRow}>
             <Ionicons name="location-outline" size={16} color={theme.colors.ink} />
             <Text style={styles.highlight}>{site?.name ?? intervention.siteName}</Text>
           </View>
           {site?.address && <Text style={styles.textMuted}>{site.address}</Text>}
-          <Button title="Ouvrir dans Maps" variant="ghost" icon="location-outline" onPress={openMaps} />
+          <Button title={t('site.openMaps')} variant="ghost" icon="navigate-outline" onPress={openMaps} />
         </Section>
 
-        <Section title="Horaires">
+        {site ? (
+          <Section title={t('site.instructions')}>
+            {site.photos?.[0] ? (
+              <Image source={{ uri: site.photos[0] }} style={styles.sitePhoto} resizeMode="cover" accessibilityLabel={site.name} />
+            ) : null}
+            {site.accessInstructions ? (
+              <View style={styles.iconRow}>
+                <Ionicons name="key-outline" size={16} color={theme.colors.ink} />
+                <Text style={[styles.row, { flex: 1 }]}>
+                  <Text style={styles.highlight}>{t('site.access')} : </Text>
+                  {site.accessInstructions}
+                </Text>
+              </View>
+            ) : null}
+            {site.accessCode ? (
+              <View style={styles.iconRow}>
+                <Ionicons name="keypad-outline" size={16} color={theme.colors.ink} />
+                <Text style={styles.row}>
+                  <Text style={styles.highlight}>{t('site.code')} : </Text>
+                  {site.accessCode}
+                </Text>
+              </View>
+            ) : null}
+            {site.contactName || site.contactPhone ? (
+              <View style={styles.iconRow}>
+                <Ionicons name="person-outline" size={16} color={theme.colors.ink} />
+                <Text style={[styles.row, { flex: 1 }]}>
+                  <Text style={styles.highlight}>{t('site.contact')} : </Text>
+                  {[site.contactName, site.contactPhone].filter(Boolean).join(' · ')}
+                </Text>
+              </View>
+            ) : null}
+            {site.contactPhone ? (
+              <Button
+                title={t('site.call', { name: site.contactName ?? site.contactPhone })}
+                variant="ghost"
+                icon="call-outline"
+                onPress={() => Linking.openURL(`tel:${site.contactPhone!.replace(/\s+/g, '')}`)}
+              />
+            ) : null}
+            {!site.accessInstructions && !site.accessCode && !site.contactPhone && !site.photos?.length ? (
+              <Text style={styles.textMuted}>{t('site.none')}</Text>
+            ) : null}
+          </Section>
+        ) : null}
+
+        <Section title={t('mission.schedule')}>
           <View style={styles.iconRow}>
             <Ionicons name="time-outline" size={16} color={theme.colors.ink} />
-            <Text style={styles.row}>
-              Prévu : {intervention.startTime} → {intervention.endTime}
-            </Text>
+            <Text style={styles.row}>{t('mission.planned', { start: intervention.startTime, end: intervention.endTime })}</Text>
           </View>
           {arrivalAllowedFrom && (
             <Text style={styles.textMuted}>
@@ -783,7 +841,7 @@ export default function InterventionDetailScreen() {
           )}
         </Section>
 
-        <Section title="Agents assignés">
+        <Section title={t('mission.agents')}>
           <AssignedAgentsList agents={intervention.agents} currentUserId={user?.id} />
         </Section>
 
@@ -815,7 +873,7 @@ export default function InterventionDetailScreen() {
         )}
 
         {isRunning && (
-          <Section title="Checklist">
+          <Section title={t('mission.checklist')}>
             <InterventionChecklist interventionId={intervention.id} />
           </Section>
         )}
@@ -842,7 +900,7 @@ export default function InterventionDetailScreen() {
         )}
         {!isCompleted && !hasStarted && (
           <SwipeToConfirm
-            label="Glissez pour démarrer"
+            label={t('mission.slideStart')}
             confirmingLabel="Relâchez pour démarrer"
             onConfirm={handleStart}
             disabled={isVerifying || !arrivalRecorded}
@@ -850,7 +908,7 @@ export default function InterventionDetailScreen() {
         )}
         {!isCompleted && hasStarted && !(userAttendance?.attendanceStatus === 'COMPLETED') && (
           <SwipeToConfirm
-            label="Glissez pour terminer"
+            label={t('mission.slideEnd')}
             confirmingLabel="Relâchez pour terminer"
             onConfirm={handleFinish}
             disabled={isVerifying}
@@ -859,7 +917,7 @@ export default function InterventionDetailScreen() {
         )}
         {isPlanned && !hasStarted && (
           <Button
-            title="Proposer un échange"
+            title={t('mission.swap')}
             variant="ghost"
             icon="swap-horizontal-outline"
             onPress={() =>
@@ -873,7 +931,7 @@ export default function InterventionDetailScreen() {
             }
           />
         )}
-        <Button title="Signaler un problème" variant="ghost" icon="alert-circle-outline" onPress={handleProblem} />
+        <Button title={t('mission.problem')} variant="ghost" icon="alert-circle-outline" onPress={handleProblem} />
       </Animated.View>
       <ProblemModal
         visible={isProblemModalVisible}
@@ -926,13 +984,23 @@ export default function InterventionDetailScreen() {
             );
             const cleanedPhotos = photosBase64.filter((v): v is string => Boolean(v));
 
-            await createAnomaly(token, {
-              interventionId: intervention.id,
-              type: problemType,
-              description: problemDescription.trim(),
-              photos: cleanedPhotos,
-            });
-            showToast('Merci', 'Votre anomalie a été transmise à l’équipe.', 'success');
+            const anomaly = { type: problemType, description: problemDescription.trim(), photos: cleanedPhotos };
+            try {
+              await createAnomaly(token, { interventionId: intervention.id, ...anomaly });
+              showToast('Merci', 'Votre anomalie a été transmise à l’équipe.', 'success');
+            } catch (err) {
+              if (!(err instanceof NetworkError)) throw err;
+              // Sans réseau (sous-sol, parking) : le signalement part au retour du réseau.
+              await queueEvent({
+                userId: user?.id ?? '',
+                interventionId: intervention.id,
+                siteId: intervention.siteId,
+                type: 'ANOMALY',
+                timestamp: new Date().toISOString(),
+                anomaly,
+              });
+              showToast('Merci', t('mission.offlineSaved'), 'info');
+            }
             setIntervention((prev) => (prev ? { ...prev, status: 'NEEDS_REVIEW' } : prev));
             setProblemDescription('');
             setProblemPhotos([]);
@@ -1000,5 +1068,10 @@ const styles = StyleSheet.create({
   },
   syncBannerText: {
     color: theme.colors.muted,
+  },
+  sitePhoto: {
+    width: '100%',
+    height: 160,
+    borderRadius: theme.radii.lg,
   },
 });

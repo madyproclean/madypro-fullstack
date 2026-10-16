@@ -13,7 +13,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.maximan81.mjplanningmobile",
-      "supportsTablet": false
+      "supportsTablet": true
     },
     "extra": {
       "eas": {

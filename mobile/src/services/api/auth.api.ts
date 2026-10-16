@@ -20,7 +20,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
     path: '/auth/login',
     options: {
       method: 'POST',
-      body: JSON.stringify({ email, password } satisfies LoginPayload),
+      body: JSON.stringify({ email: email.trim(), password } satisfies LoginPayload),
     },
   });
 }
@@ -41,7 +41,7 @@ export async function forgotPassword(email: string) {
     path: '/auth/forgot-password',
     options: {
       method: 'POST',
-      body: JSON.stringify({ email } satisfies ForgotPasswordPayload),
+      body: JSON.stringify({ email: email.trim() } satisfies ForgotPasswordPayload),
     },
   });
 }

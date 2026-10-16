@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import fetch from 'node-fetch';
 import { NotificationEntity, NotificationAudience } from './entities/notification.entity';
@@ -48,14 +48,17 @@ export class NotificationsService implements OnModuleInit {
     }, 5 * 60 * 1000);
   }
 
-  async list(page = 1, pageSize = 20) {
+  /** `targetIds` restreint l'historique aux envois visant ces sites/agents (périmètre superviseur). */
+  async list(page = 1, pageSize = 20, targetIds: string[] | null = null) {
+    const where: Prisma.NotificationWhereInput = targetIds ? { targetId: { in: targetIds } } : {};
     const [items, total] = await Promise.all([
       this.prisma.notification.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.notification.count(),
+      this.prisma.notification.count({ where }),
     ]);
     return {
       items,
@@ -92,12 +95,22 @@ export class NotificationsService implements OnModuleInit {
     return { success: true };
   }
 
-  async feed(user: { sub: string; role: string }) {
+  /**
+   * `scopedTargets` (superviseur) : ses notifications personnelles + celles visant ses sites ou ses
+   * agents ; l'admin voit tout.
+   */
+  async feed(user: { sub: string; role: string }, scopedTargets: string[] | null = null) {
     if (!user) {
       return [];
     }
     const notifications =
-      user.role === 'ADMIN' || user.role === 'SUPERVISOR'
+      user.role === 'SUPERVISOR' && scopedTargets
+        ? await this.prisma.notification.findMany({
+            where: { targetId: { in: [user.sub, ...scopedTargets] } },
+            orderBy: { createdAt: 'desc' },
+            take: 100,
+          })
+        : user.role === 'ADMIN' || user.role === 'SUPERVISOR'
         ? await this.prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
         : await this.prisma.notification.findMany({
             where: {
@@ -280,6 +293,49 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Alerte personnelle (push + fil) à chaque superviseur des sites donnés. Utilise l'audience
+   * `AGENT` ciblée, seul canal qui atteint un compte précis (comme l'alerte de retard).
+   */
+  async notifySiteSupervisors(
+    siteIds: string[],
+    payload: { title: string; message: string; category?: string; data?: Record<string, unknown> },
+    excludeUserIds: string[] = [],
+  ) {
+    if (!siteIds.length) return;
+    const links = await this.prisma.siteSupervisor.findMany({
+      where: { siteId: { in: siteIds } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    await Promise.all(
+      links
+        .filter((link) => !excludeUserIds.includes(link.userId))
+        .map((link) =>
+          this.send({ ...payload, audience: 'AGENT', targetId: link.userId } as SendNotificationDto).catch((err) =>
+            this.logger.warn(`Alerte superviseur ${link.userId} échouée: ${(err as Error).message}`),
+          ),
+        ),
+    );
+  }
+
+  /** Alerte les superviseurs de tous les sites où l'agent a déjà été affecté (son périmètre). */
+  async notifyAgentSupervisors(
+    agentId: string,
+    payload: { title: string; message: string; category?: string; data?: Record<string, unknown> },
+  ) {
+    const interventions = await this.prisma.intervention.findMany({
+      where: { assignments: { some: { userId: agentId } } },
+      select: { siteId: true },
+      distinct: ['siteId'],
+    });
+    await this.notifySiteSupervisors(
+      interventions.map((i) => i.siteId),
+      payload,
+      [agentId],
+    );
+  }
+
   listTemplates() {
     return this.prisma.notificationTemplate.findMany({ orderBy: { name: 'asc' } });
   }
@@ -441,6 +497,15 @@ export class NotificationsService implements OnModuleInit {
       create: { notificationId, userId },
     });
     return { success: true };
+  }
+
+  async getTargetId(notificationId: string): Promise<string | null> {
+    const notification = await this.prisma.notification.findUnique({
+      where: { id: notificationId },
+      select: { targetId: true },
+    });
+    if (!notification) throw new NotFoundException('Notification introuvable');
+    return notification.targetId;
   }
 
   async getReadStats(notificationId: string) {

@@ -16,6 +16,18 @@ import { RecordInvoicePaymentDto } from './dto/record-invoice-payment.dto';
 const INCLUDE = { site: { select: { name: true } }, lineItems: { orderBy: { order: 'asc' as const } } };
 const OVERDUE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// PAID n'est volontairement pas atteignable depuis ce endpoint générique : seul `recordPayment`
+// (qui calcule réellement le solde) peut faire passer une facture à PAID. PAID est un état terminal :
+// l'app n'a aucun mécanisme d'avoir/remboursement, donc annuler une facture déjà soldée laisserait un
+// paiement réellement encaissé associé à un document "annulé" — plus risqué comptablement que
+// d'interdire la transition. Une correction doit passer par un vrai avoir (hors périmètre actuel).
+const INVOICE_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+  DRAFT: ['SENT', 'CANCELLED'],
+  SENT: ['CANCELLED'],
+  PAID: [],
+  CANCELLED: [],
+};
+
 @Injectable()
 export class InvoicesService implements OnModuleInit {
   private readonly logger = new Logger(InvoicesService.name);
@@ -131,6 +143,63 @@ export class InvoicesService implements OnModuleInit {
     return this.present(invoice);
   }
 
+  /**
+   * Prépare la facture du mois d'un site en brouillon : une ligne par prestation, quantité = passages
+   * facturables réalisés, prix = prix du passage renseigné sur la prestation du site (0 sinon, à
+   * compléter). Rien n'est envoyé : l'administrateur relit puis envoie lui-même.
+   */
+  async draftFromMissions(siteId: string, month: string, actorId: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month ?? '')) throw new BadRequestException('Mois attendu au format AAAA-MM');
+    const site = await this.prisma.site.findUnique({
+      where: { id: siteId },
+      include: { categories: { include: { category: { select: { label: true } } } } },
+    });
+    if (!site) throw new NotFoundException('Site introuvable');
+    const [year, m] = month.split('-').map(Number);
+    const missions = await this.prisma.intervention.findMany({
+      where: {
+        siteId,
+        billable: true,
+        status: { in: ['COMPLETED', 'NEEDS_REVIEW'] },
+        date: { gte: new Date(Date.UTC(year, m - 1, 1)), lte: new Date(Date.UTC(year, m, 0, 23, 59, 59)) },
+      },
+      select: { categoryId: true, subType: true },
+    });
+    if (!missions.length) throw new BadRequestException('Aucun passage facturable réalisé sur ce mois');
+    const groups = new Map<string, { label: string; count: number; price: number | null }>();
+    for (const mission of missions) {
+      const offer = site.categories.find((c) => c.categoryId === mission.categoryId);
+      const key = mission.categoryId ?? `autre:${mission.subType ?? ''}`;
+      const entry = groups.get(key) ?? { label: offer?.category.label ?? mission.subType ?? 'Prestation', count: 0, price: offer?.unitPriceHT ?? null };
+      entry.count += 1;
+      groups.set(key, entry);
+    }
+    const monthLabel = new Date(Date.UTC(year, m - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const missingPrices = [...groups.values()].filter((g) => g.price === null).map((g) => g.label);
+    const due = new Date(Date.UTC(year, m, 0));
+    due.setUTCDate(due.getUTCDate() + 30);
+    return this.create(
+      {
+        siteId,
+        label: `Prestations de nettoyage — ${monthLabel}`,
+        clientName: site.contactName || site.name,
+        clientAddress: site.address,
+        clientEmail: site.contactEmail ?? undefined,
+        dueAt: due.toISOString(),
+        notes: missingPrices.length
+          ? `Prix à compléter pour : ${missingPrices.join(', ')} (aucun prix de passage renseigné sur le site).`
+          : undefined,
+        lineItems: [...groups.values()].map((g) => ({
+          description: `${g.label} — ${g.count} passage${g.count > 1 ? 's' : ''} (${monthLabel})`,
+          quantity: g.count,
+          unitPriceHT: g.price ?? 0,
+          vatRatePercent: 20,
+        })),
+      } as CreateInvoiceDto,
+      actorId,
+    );
+  }
+
   private async ensureEditable(id: string) {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) {
@@ -183,6 +252,11 @@ export class InvoicesService implements OnModuleInit {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Facture introuvable');
+    }
+    if (existing.status !== status && !INVOICE_TRANSITIONS[existing.status].includes(status)) {
+      throw new BadRequestException(
+        `Transition de statut invalide : ${existing.status} → ${status}`,
+      );
     }
     const invoice = await this.prisma.invoice.update({ where: { id }, data: { status }, include: INCLUDE });
     this.audit.record({ actorId, action: 'UPDATE_INVOICE', entityType: 'invoice', entityId: invoice.id, details: `status:${status}` });
@@ -257,6 +331,11 @@ export class InvoicesService implements OnModuleInit {
     if (!invoice) {
       throw new NotFoundException('Facture introuvable');
     }
+    if (invoice.status === 'DRAFT' || invoice.status === 'CANCELLED') {
+      throw new BadRequestException(
+        `Impossible d'enregistrer un paiement sur une facture ${invoice.status === 'DRAFT' ? 'en brouillon' : 'annulée'}`,
+      );
+    }
     const totals = computeTotals(invoice.lineItems);
     const isFullyPaid = dto.amountPaidHT >= totals.totalTTC;
     const updated = await this.prisma.invoice.update({
@@ -265,7 +344,9 @@ export class InvoicesService implements OnModuleInit {
         amountPaidHT: dto.amountPaidHT,
         paymentMethod: dto.paymentMethod,
         paidAt: isFullyPaid ? new Date(dto.paidAt ?? Date.now()) : null,
-        status: isFullyPaid ? 'PAID' : invoice.status === 'DRAFT' ? 'SENT' : invoice.status,
+        // Un montant qui ne solde plus la facture repasse toujours par SENT — jamais de statut PAID
+        // fantôme si le montant réellement enregistré est repassé sous le total dû.
+        status: isFullyPaid ? 'PAID' : 'SENT',
       },
       include: INCLUDE,
     });

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards, forwardRef } from '@nestjs/common';
 import { Request } from 'express';
 import { ApprovalsService } from './approvals.service';
-import { InterventionsService } from '../interventions/interventions.service';
+import { InterventionsService, TEMPLATE_ONLY_MESSAGE } from '../interventions/interventions.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -32,6 +32,19 @@ export class ApprovalsController {
     });
   }
 
+  /** Demandes déposées par l'utilisateur connecté (suivi côté superviseur), plus récentes d'abord. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR')
+  @Get('mine')
+  mine(@Req() req: Request, @Query('status') status?: string, @Query('pageSize') pageSize = '50') {
+    const user = req.user as any;
+    return this.approvals.list({
+      status,
+      requestedById: user.sub,
+      pageSize: Math.min(parseInt(pageSize, 10) || 50, 200),
+    });
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Post(':id/approve')
@@ -51,26 +64,28 @@ export class ApprovalsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Post(':id/reject')
-  reject(@Param('id') id: string, @Body() dto: RejectApprovalDto, @Req() req: Request) {
+  async reject(@Param('id') id: string, @Body() dto: RejectApprovalDto, @Req() req: Request) {
     const user = req.user as any;
+    const request = await this.approvals.findPending(id);
+    if (request.actionType === 'VALIDATE_TEMPLATE' && request.entityId) {
+      // Proposition refusée : la version en place du gabarit reste active.
+      await this.interventionsService.discardPendingTemplate(request.entityId);
+    }
     return this.approvals.markRejected(id, user.sub, dto.comment);
   }
 
   private async applyRequest(
-    request: { actionType: string; entityId: string | null; payload: unknown },
+    request: { actionType: string; entityId: string | null; payload: unknown; requestedById: string | null },
     reviewerId: string,
   ) {
     const payload = request.payload as any;
     switch (request.actionType) {
+      // Demandes antérieures à la règle « gabarit seul » : ne peuvent plus être appliquées.
       case 'CREATE_INTERVENTION':
-        return Array.isArray(payload?.occurrences)
-          ? this.interventionsService.createOneshotBatch(payload.occurrences, reviewerId)
-          : this.interventionsService.create(payload, reviewerId);
       case 'UPDATE_INTERVENTION_SCHEDULE':
       case 'ASSIGN_AGENT':
       case 'UNASSIGN_AGENT':
-        if (!request.entityId) throw new Error('Intervention manquante');
-        return this.interventionsService.update(request.entityId, payload, reviewerId, 'SUPERVISOR');
+        throw new BadRequestException(`Demande obsolète, à refuser. ${TEMPLATE_ONLY_MESSAGE}`);
       case 'CANCEL_INTERVENTION':
         if (!request.entityId) throw new Error('Intervention manquante');
         return this.interventionsService.cancel(request.entityId, payload.observation, reviewerId);
@@ -78,7 +93,13 @@ export class ApprovalsController {
         return this.interventionsService.createTemplateBatch(payload, reviewerId);
       case 'VALIDATE_TEMPLATE':
         if (!request.entityId) throw new Error('Gabarit manquant');
-        return this.interventionsService.validateTemplate(request.entityId, reviewerId);
+        return this.interventionsService.validateTemplate(request.entityId, reviewerId, request.requestedById);
+      case 'CANCEL_OCCURRENCE':
+        return this.interventionsService.createTemplateException(
+          payload.templateId,
+          { stopId: payload.stopId, date: payload.date, kind: 'CANCEL', reason: payload.reason },
+          { id: reviewerId, role: 'ADMIN' },
+        );
       default:
         throw new Error('Type d’action non pris en charge');
     }

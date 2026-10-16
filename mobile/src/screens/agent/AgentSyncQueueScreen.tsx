@@ -6,6 +6,14 @@ import { useSyncContext } from '@/context/SyncContext';
 import { Button } from '@/components/ui/Button';
 import { theme } from '@/config/theme';
 
+const TYPE_LABELS: Record<string, string> = {
+  ARRIVAL: 'Arrivée',
+  START: 'Début',
+  END: 'Fin',
+  CHECKLIST: 'Checklist',
+  ANOMALY: 'Problème signalé',
+};
+
 const STATUS_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   pending: 'time-outline',
   sending: 'sync-outline',
@@ -55,7 +63,7 @@ export default function AgentSyncQueueScreen() {
           renderItem={({ item }) => (
             <View style={styles.card}>
               <View style={styles.cardRow}>
-                <Text style={styles.badge}>{item.type}</Text>
+                <Text style={styles.badge}>{TYPE_LABELS[item.type] ?? item.type}</Text>
                 <Text style={styles.time}>{item.timestamp?.slice(0, 16).replace('T', ' ')}</Text>
               </View>
               <Text style={styles.subtitle}>Intervention : {item.interventionId}</Text>

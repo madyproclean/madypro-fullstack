@@ -18,17 +18,22 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '@/config/theme';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { ClockCard } from '@/components/ui/ClockCard';
+import { StatRow } from '@/components/ui/StatRow';
 import { HeaderLayout } from '@/components/layout/HeaderLayout';
 import { InterventionCard } from '@/components/cards/InterventionCard';
 import { Intervention } from '@/types/intervention';
-import { listInterventionsByRange } from '@/services/api/interventions.api';
+import { isPlannedOnly, listMyMissionsByRange } from '@/services/api/interventions.api';
+import { useToast } from '@/context/ToastContext';
 import { useAuthContext } from '@/context/AuthContext';
 import { AgentStackParamList, AgentTabParamList } from '@/navigation/types';
 import { useSyncContext } from '@/context/SyncContext';
 import { buildDateTime, formatTime } from '@/utils/interventionTime';
 import { describeWeatherCode, getCurrentWeather, WeatherSnapshot } from '@/services/api/weather.api';
+import { useI18n } from '@/i18n';
+import type { MessageKey } from '@/i18n';
+import { RouteCard } from '@/components/agent/RouteCard';
+import { MonthSummaryCard } from '@/components/agent/MonthSummaryCard';
 
 type Navigation = CompositeNavigationProp<
   BottomTabNavigationProp<AgentTabParamList, 'AgentHome'>,
@@ -69,14 +74,14 @@ function computePriorityMoment(interventions: Intervention[], userId?: string): 
   return { kind: 'none' };
 }
 
-function formatCountdown(target: Date, now: Date) {
+function formatCountdown(target: Date, now: Date, t: (key: MessageKey, vars?: Record<string, string | number>) => string) {
   const diffMs = target.getTime() - now.getTime();
-  if (diffMs <= 0) return 'maintenant';
+  if (diffMs <= 0) return t('home.now');
   const minutes = Math.round(diffMs / 60000);
-  if (minutes < 60) return `dans ${minutes} min`;
+  if (minutes < 60) return t('home.inMinutes', { minutes });
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return `dans ${hours} h${rest ? ` ${rest}` : ''}`;
+  return t('home.inHours', { hours, minutes: rest ? String(rest).padStart(2, '0') : '' }).trim();
 }
 
 const HOME_CACHE_KEY = 'agent:home:interventions-cache';
@@ -94,6 +99,8 @@ export default function AgentHomeScreen() {
   const [now, setNow] = React.useState(() => new Date());
 
   const navigation = useNavigation<Navigation>();
+  const { t } = useI18n();
+  const { showToast } = useToast();
   const { token, user } = useAuthContext();
   const { flush, pendingEvents, isOnline } = useSyncContext();
 
@@ -108,8 +115,8 @@ export default function AgentHomeScreen() {
     setError(null);
     try {
       const [todayList, weekList] = await Promise.all([
-        listInterventionsByRange(token, 'today', user.id),
-        listInterventionsByRange(token, 'week', user.id),
+        listMyMissionsByRange(token, 'today', user.id),
+        listMyMissionsByRange(token, 'week', user.id),
       ]);
       const next = { today: todayList, week: weekList };
       setInterventions(next);
@@ -194,9 +201,7 @@ export default function AgentHomeScreen() {
 
   const displayed = scope === 'today' ? interventions.today : interventions.week;
   const emptyLabel =
-    scope === 'today'
-      ? 'Aucune intervention prévue aujourd’hui.'
-      : 'Aucune intervention planifiée cette semaine.';
+    scope === 'today' ? t('home.emptyToday') : t('home.emptyWeek');
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -208,15 +213,21 @@ export default function AgentHomeScreen() {
     }
   }, [flush, loadInterventions]);
 
-  const goToIntervention = (intervention: Intervention) =>
+  const goToIntervention = (intervention: Intervention) => {
+    if (isPlannedOnly(intervention)) {
+      // Mission prévue mais pas encore créée : sa fiche s'ouvre le jour même, peu avant le début.
+      showToast(intervention.siteName, t('planning.notYet'), 'info');
+      return;
+    }
     navigation.navigate('AgentIntervention', { id: intervention.id });
+  };
 
   const firstName = user?.name?.split(' ')[0] ?? 'Agent';
 
   return (
     <HeaderLayout
-      title={`Bonjour, ${firstName}`}
-      subtitle="Retrouvez interventions, sites et absences en un clin d'œil."
+      title={t('home.hello', { name: firstName })}
+      subtitle={t('home.subtitle')}
       accent="Agent Madypro Clean"
     >
       <ScrollView
@@ -231,57 +242,88 @@ export default function AgentHomeScreen() {
             onPress={() => navigation.navigate('AgentSyncQueue')}
           >
             <Text style={styles.syncBadgeText}>
-              {isOnline
-                ? `Synchronisation en cours… (${pendingEvents.length})`
-                : `${pendingEvents.length} action(s) en attente de réseau`}
+              {isOnline ? t('home.syncing', { count: pendingEvents.length }) : t('home.pending', { count: pendingEvents.length })}
             </Text>
           </TouchableOpacity>
         )}
         {isOfflineCache && (
           <View style={styles.syncBadge}>
-            <Text style={styles.syncBadgeText}>Hors ligne — dernières données connues</Text>
+            <Text style={styles.syncBadgeText}>{t('home.offline')}</Text>
           </View>
         )}
 
         {weather && (
           <View style={styles.weatherRow}>
             <Text style={styles.weatherTemp}>{weather.temperatureC}°C</Text>
-            <Text style={styles.weatherLabel}>{describeWeatherCode(weather.weatherCode)} sur le site</Text>
+            <Text style={styles.weatherLabel}>{t('home.weatherOnSite', { weather: describeWeatherCode(weather.weatherCode) })}</Text>
           </View>
         )}
 
         {isLoading ? (
           <ActivityIndicator color={theme.colors.primary} />
         ) : priority.kind === 'in-progress' ? (
-          <Card style={styles.heroCard}>
-            <Text style={styles.heroLabel}>Mission en cours</Text>
-            <Text style={styles.heroSite}>{priority.intervention.siteName}</Text>
-            <Text style={styles.heroTime}>
-              {priority.intervention.startTime} – {priority.intervention.endTime}
-              {priority.since ? ` · débutée à ${formatTime(new Date(priority.since))}` : ''}
-            </Text>
-            <Button title="Voir l'intervention" onPress={() => goToIntervention(priority.intervention)} />
-          </Card>
+          <ClockCard
+            state="in-progress"
+            statusLabel={t('home.inProgress')}
+            siteName={priority.intervention.siteName}
+            timeRange={`${priority.intervention.startTime} – ${priority.intervention.endTime}${
+              priority.since ? ` · ${t('home.startedAt', { time: formatTime(new Date(priority.since)) })}` : ''
+            }`}
+            onPress={() => goToIntervention(priority.intervention)}
+          />
         ) : priority.kind === 'upcoming' ? (
-          <Card style={styles.heroCard}>
-            <Text style={styles.heroLabel}>Prochaine mission · {formatCountdown(priority.startsAt, now)}</Text>
-            <Text style={styles.heroSite}>{priority.intervention.siteName}</Text>
-            <Text style={styles.heroTime}>
-              {priority.intervention.startTime} – {priority.intervention.endTime}
-            </Text>
-            <Button title="Voir l'intervention" onPress={() => goToIntervention(priority.intervention)} />
-          </Card>
+          <ClockCard
+            state="upcoming"
+            statusLabel={t('home.next', { when: formatCountdown(priority.startsAt, now, t) })}
+            siteName={priority.intervention.siteName}
+            timeRange={`${priority.intervention.startTime} – ${priority.intervention.endTime}`}
+            onPress={() => goToIntervention(priority.intervention)}
+          />
         ) : (
-          <Card style={styles.heroCardEmpty}>
-            <Text style={styles.heroEmptyText}>Rien de prévu pour l'instant. Profitez-en !</Text>
-          </Card>
+          <ClockCard state="empty" />
+        )}
+
+        {!isLoading && priority.kind === 'in-progress' ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            style={styles.problemButton}
+            onPress={() => navigation.navigate('AgentIntervention', { id: priority.intervention.id, openProblem: true })}
+          >
+            <Ionicons name="alert-circle-outline" size={22} color={theme.colors.status.absent} />
+            <Text style={styles.problemText}>{t('mission.problem')}</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {!isLoading && priority.kind === 'upcoming' ? (
+          <RouteCard
+            siteName={priority.intervention.siteName}
+            address={priority.intervention.siteAddress ?? priority.intervention.siteName}
+            latitude={priority.intervention.siteLatitude}
+            longitude={priority.intervention.siteLongitude}
+          />
+        ) : null}
+
+        {!isLoading ? <MonthSummaryCard /> : null}
+
+        {!isLoading && (
+          <StatRow
+            items={[
+              { label: t('home.today'), value: interventions.today.length },
+              {
+                label: t('home.done'),
+                value: interventions.today.filter((i) => i.agents?.find((a) => a.id === user?.id)?.checkOutTime)
+                  .length,
+              },
+              { label: t('home.week'), value: interventions.week.length },
+            ]}
+          />
         )}
 
         <View style={styles.block}>
           <View style={styles.segmented}>
             {[
-              { label: 'Aujourd’hui', value: 'today' as const },
-              { label: 'Cette semaine', value: 'week' as const },
+              { label: t('home.today'), value: 'today' as const },
+              { label: t('home.week'), value: 'week' as const },
             ].map((tab) => {
               const active = scope === tab.value;
               return (
@@ -300,10 +342,10 @@ export default function AgentHomeScreen() {
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              {scope === 'today' ? 'Planning du jour' : 'Planning à venir'}
+              {scope === 'today' ? t('home.planToday') : t('home.planNext')}
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('AgentPlanning')} style={styles.inlineLinkRow}>
-              <Text style={styles.inlineLink}>Voir tout</Text>
+              <Text style={styles.inlineLink}>{t('home.seeAll')}</Text>
               <Ionicons name="chevron-forward" size={14} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
@@ -327,22 +369,22 @@ export default function AgentHomeScreen() {
         </View>
 
         <TouchableOpacity onPress={() => navigation.navigate('AgentRequests')} style={styles.linkRow}>
-          <Text style={styles.link}>Déclarer une absence</Text>
+          <Text style={styles.link}>{t('home.declareAbsence')}</Text>
           <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('AgentShiftSwaps')} style={styles.linkRow}>
-          <Text style={styles.link}>Échanges de shift</Text>
+          <Text style={styles.link}>{t('home.swaps')}</Text>
           <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('AgentTeamFeed')} style={styles.linkRow}>
-          <Text style={styles.link}>Fil d'actualité</Text>
+          <Text style={styles.link}>{t('home.feed')}</Text>
           <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('AgentOnboardingChecklist')} style={styles.linkRow}>
-          <Text style={styles.link}>Parcours d'intégration</Text>
+          <Text style={styles.link}>{t('home.onboarding')}</Text>
           <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
         </TouchableOpacity>
       </ScrollView>
@@ -351,6 +393,18 @@ export default function AgentHomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  problemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 52,
+    borderRadius: theme.radii.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.status.absent,
+    backgroundColor: '#fff',
+  },
+  problemText: { color: theme.colors.status.absent, fontSize: 16, fontWeight: '700' },
   weatherRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -377,35 +431,6 @@ const styles = StyleSheet.create({
     color: theme.colors.status.late,
     fontSize: 12,
     fontFamily: theme.fonts.bodySemiBold,
-  },
-  heroCard: {
-    backgroundColor: theme.colors.ink,
-    gap: theme.spacing.xs,
-  },
-  heroCardEmpty: {
-    backgroundColor: theme.colors.primarySoft,
-  },
-  heroLabel: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    color: theme.colors.sage,
-    fontFamily: theme.fonts.bodySemiBold,
-  },
-  heroSite: {
-    fontSize: 22,
-    fontFamily: theme.fonts.display,
-    color: '#fff',
-    marginTop: 2,
-  },
-  heroTime: {
-    color: theme.colors.sage,
-    marginBottom: theme.spacing.md,
-  },
-  heroEmptyText: {
-    color: theme.colors.primary,
-    fontFamily: theme.fonts.bodySemiBold,
-    textAlign: 'center',
   },
   block: {
     gap: theme.spacing.md,

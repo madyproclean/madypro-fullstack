@@ -3,10 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthContext } from './AuthContext';
 import { checkIn, checkOut, markArrival } from '../services/api/attendance.api';
+import { toggleInterventionChecklistItem } from '../services/api/interventions.api';
+import { createAnomaly } from '../services/api/anomalies.api';
+import { NetworkError } from '../services/api/client';
 
 const STORAGE_KEY = 'syncQueue';
 
-type SyncEventType = 'ARRIVAL' | 'START' | 'END';
+/** Pointages, cases de checklist et signalements faits sans réseau, envoyés au retour du réseau. */
+type SyncEventType = 'ARRIVAL' | 'START' | 'END' | 'CHECKLIST' | 'ANOMALY';
 type SyncStatus = 'pending' | 'sending' | 'failed';
 
 type SyncEvent = {
@@ -18,6 +22,9 @@ type SyncEvent = {
   timestamp: string;
   coordinates?: { latitude: number; longitude: number } | null;
   photo?: string;
+  checklistItemId?: string;
+  done?: boolean;
+  anomaly?: { type: string; description: string; photos: string[] };
   status: SyncStatus;
   error?: string | null;
 };
@@ -30,6 +37,9 @@ type QueueInput = {
   timestamp: string;
   coordinates?: { latitude: number; longitude: number } | null;
   photo?: string;
+  checklistItemId?: string;
+  done?: boolean;
+  anomaly?: { type: string; description: string; photos: string[] };
 };
 
 type SyncContextValue = {
@@ -111,6 +121,14 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!event.photo) throw new Error('Photo manquante');
         return checkOut(token, { userId: event.userId, interventionId: event.interventionId, photo: event.photo });
       }
+      if (event.type === 'CHECKLIST') {
+        if (!event.checklistItemId) throw new Error('Tâche manquante');
+        return toggleInterventionChecklistItem(token, event.interventionId, event.checklistItemId, Boolean(event.done));
+      }
+      if (event.type === 'ANOMALY') {
+        if (!event.anomaly) throw new Error('Signalement vide');
+        return createAnomaly(token, { interventionId: event.interventionId, ...event.anomaly });
+      }
     },
     [token, user],
   );
@@ -159,7 +177,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const queueEvent = useCallback(
     async (input: QueueInput) => {
       const event: SyncEvent = {
-        id: `sync-${Date.now()}`,
+        id: `sync-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         ...input,
         status: 'pending',
         error: null,
@@ -171,13 +189,17 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLastError(null);
           return;
         } catch (error) {
+          // Checklist et signalements : seul un manque de réseau met l'action en attente ; un refus
+          // du serveur est rendu tel quel à l'écran.
+          if ((event.type === 'CHECKLIST' || event.type === 'ANOMALY') && !(error instanceof NetworkError)) throw error;
           const message = error instanceof Error ? error.message : 'Synchronisation impossible';
           setLastError(message);
           // fallthrough to queueing locally
         }
       }
 
-      setPendingEvents((prev) => [event, ...prev]);
+      // Ajout en fin de file : l'envoi suit l'ordre des actions (arrivée, début, fin).
+      setPendingEvents((prev) => [...prev, event]);
     },
     [isOnline, uploadEvent],
   );

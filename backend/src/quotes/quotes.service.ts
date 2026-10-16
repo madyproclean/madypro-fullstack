@@ -13,6 +13,16 @@ import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 const INCLUDE = { site: { select: { name: true } }, lineItems: { orderBy: { order: 'asc' as const } } };
 
+// Transitions autorisées : DRAFT est le seul état modifiable en lignes ; ACCEPTED/REJECTED sont des
+// décisions du client et n'ont pas vocation à être annulées après coup autrement qu'en CANCELLED.
+const QUOTE_TRANSITIONS: Record<QuoteStatus, QuoteStatus[]> = {
+  DRAFT: ['SENT', 'CANCELLED'],
+  SENT: ['ACCEPTED', 'REJECTED', 'CANCELLED'],
+  ACCEPTED: ['CANCELLED'],
+  REJECTED: ['CANCELLED'],
+  CANCELLED: [],
+};
+
 @Injectable()
 export class QuotesService {
   constructor(
@@ -134,6 +144,11 @@ export class QuotesService {
     if (!existing) {
       throw new NotFoundException('Devis introuvable');
     }
+    if (existing.status !== status && !QUOTE_TRANSITIONS[existing.status].includes(status)) {
+      throw new BadRequestException(
+        `Transition de statut invalide : ${existing.status} → ${status}`,
+      );
+    }
     const quote = await this.prisma.quote.update({ where: { id }, data: { status }, include: INCLUDE });
     this.audit.record({ actorId, action: 'UPDATE_QUOTE', entityType: 'quote', entityId: quote.id, details: `status:${status}` });
     return this.present(quote);
@@ -208,6 +223,10 @@ export class QuotesService {
     }
     if (quote.status !== 'ACCEPTED') {
       throw new BadRequestException('Seul un devis accepté peut être converti en facture');
+    }
+    const alreadyConverted = await this.prisma.invoice.findFirst({ where: { quoteId: quote.id } });
+    if (alreadyConverted) {
+      throw new BadRequestException(`Ce devis a déjà été converti en facture ${alreadyConverted.number}`);
     }
     const invoice = await this.invoices.create(
       {

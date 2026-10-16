@@ -18,7 +18,7 @@ services:
       retries: 10
 
   api:
-    build: ./api
+    build: ./backend
     restart: unless-stopped
     env_file: []
     environment:
@@ -30,7 +30,7 @@ services:
       - db
 
   web:
-    build: ./web
+    build: ./frontend
     restart: unless-stopped
     environment:
       VITE_API_URL: http://api:3000

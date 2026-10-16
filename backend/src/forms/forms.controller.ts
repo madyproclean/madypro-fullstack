@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { FormsService } from './forms.service';
+import { SupervisorScopeService } from '../common/supervisor-scope/supervisor-scope.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -11,7 +12,10 @@ import { SubmitFormDto } from './dto/submit-form.dto';
 @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
 @Controller('forms')
 export class FormsController {
-  constructor(private readonly formsService: FormsService) {}
+  constructor(
+    private readonly formsService: FormsService,
+    private readonly scope: SupervisorScopeService,
+  ) {}
 
   @Get()
   findAll() {
@@ -37,7 +41,7 @@ export class FormsController {
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Get(':id/submissions')
-  findSubmissions(@Param('id') id: string) {
-    return this.formsService.findSubmissions(id);
+  async findSubmissions(@Param('id') id: string, @Req() req: Request) {
+    return this.formsService.findSubmissions(id, await this.scope.siteIds(req.user as any));
   }
 }

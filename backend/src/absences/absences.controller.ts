@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards, ForbiddenException } from '@nestjs/common';
 import { AbsencesService } from './absences.service';
+import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -11,7 +12,10 @@ import { BadRequestException } from '@nestjs/common';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('absences')
 export class AbsencesController {
-  constructor(private readonly service: AbsencesService) {}
+  constructor(
+    private readonly service: AbsencesService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get()
@@ -22,6 +26,8 @@ export class AbsencesController {
     @Query('agentId') userId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('manual') manual?: string,
+    @Query('siteId') siteId?: string,
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '20',
   ) {
@@ -34,6 +40,8 @@ export class AbsencesController {
         userId: enforcedUserId,
         startDate,
         endDate,
+        manual: manual === 'true',
+        siteId,
         page: parseInt(page, 10) || 1,
         pageSize: parseInt(pageSize, 10) || 20,
       },
@@ -70,7 +78,7 @@ export class AbsencesController {
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get(':id')
   async detail(@Req() req: any, @Param('id') id: string) {
-    const absence = await this.service.detail(id);
+    const absence = await this.service.detail(id, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
     if (req.user?.role === 'AGENT' && absence.agent.id !== req.user.userId) {
       throw new ForbiddenException('Accès refusé');
     }
@@ -79,48 +87,55 @@ export class AbsencesController {
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Post('request')
-  request(@Req() req: any, @Body() body: CreateAbsenceRequestDto) {
+  async request(@Req() req: any, @Body() body: CreateAbsenceRequestDto) {
     const viewer = req.user;
     const enforcedUserId = viewer?.role?.toUpperCase() === 'AGENT' ? viewer.userId : body.userId;
     if (!enforcedUserId) {
       throw new BadRequestException('userId requis');
     }
+    await this.service.assertAgentInScope(enforcedUserId, { id: viewer?.userId ?? viewer?.sub, role: viewer?.role });
     return this.service.request({ ...body, userId: enforcedUserId });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Post('manual')
-  createManual(@Body() body: CreateManualAbsenceDto) {
-    return this.service.createManual(body);
+  createManual(@Req() req: any, @Body() body: CreateManualAbsenceDto) {
+    return this.service.createManual(body, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() body: UpdateAbsenceStatusDto) {
-    return this.service.updateStatus(id, body);
+  updateStatus(@Req() req: any, @Param('id') id: string, @Body() body: UpdateAbsenceStatusDto) {
+    const viewerId = req.user?.userId ?? req.user?.sub;
+    // Le valideur est celui du jeton, jamais une valeur envoyée par le client.
+    const validatedBy = this.usersService.findOne(viewerId)?.name ?? viewerId;
+    return this.service.updateStatus(id, { ...body, validatedBy }, { id: viewerId, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Post(':id/approve-level1')
   approveLevel1(@Param('id') id: string, @Req() req: any) {
-    return this.service.approveLevel1(id, req.user?.userId ?? req.user?.sub);
+    return this.service.approveLevel1(id, req.user?.userId ?? req.user?.sub, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR')
   @Get(':id/replacement-suggestions')
-  getReplacementSuggestions(@Param('id') id: string) {
-    return this.service.getReplacementSuggestions(id);
+  getReplacementSuggestions(@Req() req: any, @Param('id') id: string) {
+    return this.service.getReplacementSuggestions(id, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
   }
 
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get('leave-balance/:userId')
-  getLeaveBalance(
+  async getLeaveBalance(
     @Req() req: any,
     @Param('userId') userId: string,
     @Query('year') year?: string,
   ) {
     if (req.user?.role === 'AGENT' && req.user.userId !== userId) {
       throw new ForbiddenException('Accès refusé');
+    }
+    if (req.user?.userId !== userId) {
+      await this.service.assertAgentInScope(userId, { id: req.user?.userId ?? req.user?.sub, role: req.user?.role });
     }
     return this.service.getLeaveBalance(userId, year ? Number(year) : new Date().getFullYear());
   }
