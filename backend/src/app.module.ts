@@ -36,6 +36,7 @@ import { FormsModule } from './forms/forms.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InboxModule } from './inbox/inbox.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 import { SupervisionModule } from './supervision/supervision.module';
 
 @Module({
@@ -77,6 +78,7 @@ import { SupervisionModule } from './supervision/supervision.module';
     CategoriesModule,
     SupervisionModule,
     InboxModule,
+    MonitoringModule,
   ],
   controllers: [AppController],
 })

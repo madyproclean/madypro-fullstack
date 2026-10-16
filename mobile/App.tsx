@@ -16,6 +16,9 @@ import { AuthProvider } from './src/context/AuthContext';
 import { SyncProvider } from './src/context/SyncContext';
 import { NotificationProvider } from './src/context/NotificationContext';
 import { I18nProvider } from './src/i18n';
+import { installGlobalErrorReporting } from './src/services/errorReporting';
+
+installGlobalErrorReporting();
 import { ToastProvider } from './src/context/ToastContext';
 
 export default function App() {

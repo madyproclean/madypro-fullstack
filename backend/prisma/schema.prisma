@@ -471,6 +471,10 @@ model Intervention {
   quotes                  Quote[]
 
   @@index([batchId])
+  @@index([date])
+  @@index([siteId, date])
+  @@index([generatedFromStopId, date])
+  @@index([status, date])
 }
 
 model InterventionChecklistItem {
@@ -484,6 +488,8 @@ model InterventionChecklistItem {
   completedBy    String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@index([interventionId])
 }
 
 model InterventionAssignment {
@@ -493,6 +499,7 @@ model InterventionAssignment {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([interventionId, userId])
+  @@index([userId])
 }
 
 model InterventionTruck {
@@ -627,6 +634,10 @@ model Attendance {
   updatedAt         DateTime         @updatedAt
   user              User             @relation(fields: [userId], references: [id])
   intervention      Intervention     @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+
+  @@index([interventionId])
+  @@index([userId, date])
+  @@index([date])
 }
 
 model Absence {
@@ -651,6 +662,9 @@ model Absence {
   requiresSecondApproval Boolean       @default(false)
   level1ApprovedBy       String?
   level1ApprovedAt       DateTime?
+
+  @@index([userId, status])
+  @@index([status])
 }
 
 model LeaveAllocation {
@@ -690,6 +704,8 @@ model Notification {
   escalatedAt          DateTime?
   createdAt            DateTime             @default(now())
   reads                NotificationRead[]
+
+  @@index([targetId, createdAt])
 }
 
 enum NotificationPriority {
@@ -719,6 +735,8 @@ model ChatMessage {
   body         String
   createdAt    DateTime  @default(now())
   readAt       DateTime?
+
+  @@index([threadUserId, createdAt])
 }
 
 model NotificationRead {
@@ -744,6 +762,9 @@ model Anomaly {
   status         AnomalyStatus @default(NEW)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  @@index([interventionId])
+  @@index([status])
 }
 
 model PushToken {
@@ -770,6 +791,9 @@ model AuditLog {
   before     Json?
   after      Json?
   createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
 
 enum QuoteStatus {
@@ -947,4 +971,22 @@ model InventoryMovement {
   createdAt     DateTime      @default(now())
 
   @@index([itemId, createdAt])
+}
+
+/// Erreur relevée par le serveur, le site web ou l'application (regroupée par empreinte).
+model ErrorEvent {
+  id          String    @id @default(cuid())
+  fingerprint String    @unique
+  source      String
+  message     String
+  stack       String?
+  path        String?
+  userId      String?
+  appVersion  String?
+  count       Int       @default(1)
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([lastSeenAt])
 }

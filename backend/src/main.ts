@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { MonitoringService } from './monitoring/monitoring.service';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as bodyParser from 'body-parser'
@@ -30,6 +31,12 @@ async function bootstrap() {
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,
+  });
+  // Promesses rejetées sans gestionnaire : relevées dans le journal d'erreurs plutôt que perdues.
+  const monitoring = app.get(MonitoringService);
+  process.on('unhandledRejection', (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    monitoring.record({ source: 'SERVER', message: err.message, stack: err.stack, path: 'tâche de fond' }).catch(() => undefined);
   });
   const config = app.get(ConfigService);
   const port = config.get('app.port') || 3000;

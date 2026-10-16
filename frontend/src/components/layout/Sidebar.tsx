@@ -102,6 +102,7 @@ const ADMIN_MENU: MenuSection[] = [
         children: [
           { to: '/audit', label: 'Journal d’audit' },
           { to: '/audit/login-history', label: 'Connexions' },
+          { to: '/erreurs', label: 'Erreurs techniques' },
         ],
       },
     ],
