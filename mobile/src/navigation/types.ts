@@ -15,7 +15,8 @@ export type AgentTabParamList = {
 
 export type AgentStackParamList = {
   AgentTabs: NavigatorScreenParams<AgentTabParamList>;
-  AgentIntervention: { id: string };
+  /** `openProblem` : ouvre directement le signalement d'un problème. */
+  AgentIntervention: { id: string; openProblem?: boolean };
   AgentAbsenceForm: undefined;
   AgentChangePassword: undefined;
   AgentSyncQueue: undefined;
@@ -46,4 +47,5 @@ export type RootStackParamList = {
   Agent: NavigatorScreenParams<AgentStackParamList>;
   Supervisor: NavigatorScreenParams<SupervisorTabParamList>;
   AdminWebOnly: undefined;
+  Locked: undefined;
 };

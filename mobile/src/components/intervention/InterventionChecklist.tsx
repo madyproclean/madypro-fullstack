@@ -3,10 +3,11 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/config/theme';
 import { useAuthContext } from '@/context/AuthContext';
+import { useSyncContext } from '@/context/SyncContext';
+import { agentCache } from '@/services/agentCache';
 import {
   InterventionChecklistItem,
   listInterventionChecklist,
-  toggleInterventionChecklistItem,
 } from '@/services/api/interventions.api';
 
 type InterventionChecklistProps = {
@@ -14,7 +15,8 @@ type InterventionChecklistProps = {
 };
 
 export const InterventionChecklist: React.FC<InterventionChecklistProps> = ({ interventionId }) => {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
+  const { queueEvent, pendingEvents } = useSyncContext();
   const [items, setItems] = React.useState<InterventionChecklistItem[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
@@ -22,9 +24,18 @@ export const InterventionChecklist: React.FC<InterventionChecklistProps> = ({ in
   React.useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    listInterventionChecklist(token, interventionId)
-      .then((data) => {
-        if (!cancelled) setItems(data);
+    // Gardée sur le téléphone : la checklist reste lisible et cochable sans réseau.
+    agentCache
+      .loadWithCache(user?.id, `checklist:${interventionId}`, () => listInterventionChecklist(token, interventionId))
+      .then(({ value }) => {
+        if (cancelled) return;
+        // Les cases cochées hors ligne et pas encore envoyées gardent leur nouvel état.
+        const queued = new Map(
+          pendingEvents
+            .filter((e) => e.type === 'CHECKLIST' && e.interventionId === interventionId && e.checklistItemId)
+            .map((e) => [e.checklistItemId as string, Boolean(e.done)]),
+        );
+        setItems(value.map((i) => (queued.has(i.id) ? { ...i, done: queued.get(i.id)! } : i)));
       })
       .catch(() => {
         if (!cancelled) setItems([]);
@@ -43,7 +54,17 @@ export const InterventionChecklist: React.FC<InterventionChecklistProps> = ({ in
     const nextDone = !item.done;
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, done: nextDone } : i)));
     try {
-      await toggleInterventionChecklistItem(token, interventionId, item.id, nextDone);
+      await queueEvent({
+        userId: user?.id ?? '',
+        interventionId,
+        siteId: '',
+        type: 'CHECKLIST',
+        timestamp: new Date().toISOString(),
+        checklistItemId: item.id,
+        done: nextDone,
+      });
+      const next = items.map((i) => (i.id === item.id ? { ...i, done: nextDone } : i));
+      if (user?.id) agentCache.writeCache(user.id, `checklist:${interventionId}`, next);
     } catch {
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, done: item.done } : i)));
     } finally {

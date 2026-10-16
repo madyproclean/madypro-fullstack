@@ -1,3 +1,4 @@
+import { useI18n } from '@/i18n';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,10 +27,13 @@ export const ClockCard: React.FC<ClockCardProps> = ({
   statusLabel,
   siteName,
   timeRange,
-  ctaLabel = 'Voir l’intervention',
+  ctaLabel,
   onPress,
-  emptyText = 'Rien de prévu pour l’instant. Profitez-en !',
+  emptyText,
 }) => {
+  const { t } = useI18n();
+  ctaLabel = ctaLabel ?? t('home.openJob');
+  emptyText = emptyText ?? t('home.noJob');
   const [now, setNow] = React.useState(new Date());
 
   React.useEffect(() => {

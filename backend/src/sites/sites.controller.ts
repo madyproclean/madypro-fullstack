@@ -40,7 +40,9 @@ export class SitesController {
   @UseGuards(JwtAuthGuard, RolesGuard, SupervisorScopeGuard('site'))
   @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @Req() req: Request) {
+    const user = req.user as any;
+    if (user?.role === 'AGENT') await this.service.assertAgentWorksOnSite(id, user.sub);
     return this.service.findOne(id);
   }
 

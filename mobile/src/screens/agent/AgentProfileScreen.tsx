@@ -10,18 +10,37 @@ import { HeaderLayout } from '@/components/layout/HeaderLayout';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AgentStackParamList } from '@/navigation/types';
+import { LANG_LABELS, Lang, useI18n } from '@/i18n';
+import { biometricLock } from '@/services/biometricLock';
+import { MonthSummaryCard } from '@/components/agent/MonthSummaryCard';
+import { Pressable } from 'react-native';
 
 export default function AgentProfileScreen() {
   const { user, logout } = useAuthContext();
   const { showToast } = useToast();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<AgentStackParamList>>();
+  const { t, lang, setLang } = useI18n();
+  const [biometricAvailable, setBiometricAvailable] = React.useState(false);
+  const [biometricEnabled, setBiometricEnabled] = React.useState(false);
 
   React.useEffect(() => {
     Notifications.getPermissionsAsync().then(({ status }) => {
       setNotificationsEnabled(status === 'granted');
     });
+    biometricLock.isAvailable().then(setBiometricAvailable);
+    biometricLock.isEnabled().then(setBiometricEnabled);
   }, []);
+
+  const toggleBiometric = async (value: boolean) => {
+    if (value) {
+      // On vérifie d'abord que l'empreinte ou le visage fonctionne, pour ne pas bloquer l'agent.
+      const ok = await biometricLock.authenticate(t('profile.biometric'));
+      if (!ok) return;
+    }
+    await biometricLock.setEnabled(value);
+    setBiometricEnabled(value);
+  };
 
   const toggleNotifications = async (value: boolean) => {
     if (!value) {
@@ -39,26 +58,45 @@ export default function AgentProfileScreen() {
 
   return (
     <HeaderLayout
-      title="Profil"
-      subtitle="Informations personnelles et session"
+      title={t('profile.title')}
+      subtitle={t('profile.subtitle')}
       accent="Compte"
       contentStyle={styles.profileContent}
       trailing={<Ionicons name="person-circle-outline" size={32} color={theme.colors.primary} />}
     >
+      <MonthSummaryCard />
+
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Informations personnelles</Text>
-        <InfoRow label="Nom" value={user?.name ?? 'Agent'} />
-        <InfoRow label="Email" value={user?.email ?? '—'} />
-        <InfoRow label="Téléphone" value={user?.phone ?? 'Non renseigné'} />
-        <InfoRow label="Rôle" value={user?.role ?? 'Agent'} />
+        <Text style={styles.sectionTitle}>{t('profile.personal')}</Text>
+        <InfoRow label={t('profile.name')} value={user?.name ?? 'Agent'} />
+        <InfoRow label={t('profile.email')} value={user?.email ?? '—'} />
+        <InfoRow label={t('profile.phone')} value={user?.phone ?? t('profile.notSet')} />
+        <InfoRow label={t('profile.role')} value={user?.role ?? 'Agent'} />
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Paramètres</Text>
+        <Text style={styles.sectionTitle}>{t('profile.language')}</Text>
+        <View style={styles.langRow}>
+          {(Object.keys(LANG_LABELS) as Lang[]).map((code) => (
+            <Pressable
+              key={code}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: lang === code }}
+              onPress={() => setLang(code)}
+              style={[styles.langChip, lang === code && styles.langChipOn]}
+            >
+              <Text style={[styles.langText, lang === code && styles.langTextOn]}>{LANG_LABELS[code]}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>{t('profile.settings')}</Text>
         <View style={styles.settingRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.settingLabel}>Notifications push</Text>
-            <Text style={styles.meta}>Recevoir rappels et alertes opérationnelles</Text>
+            <Text style={styles.settingLabel}>{t('profile.push')}</Text>
+            <Text style={styles.meta}>{t('profile.pushHint')}</Text>
           </View>
           <Switch
             value={notificationsEnabled}
@@ -67,36 +105,49 @@ export default function AgentProfileScreen() {
             thumbColor={notificationsEnabled ? theme.colors.primary : '#f4f3f4'}
           />
         </View>
+        <View style={styles.settingRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.settingLabel}>{t('profile.biometric')}</Text>
+            <Text style={styles.meta}>{biometricAvailable ? t('profile.biometricHint') : t('profile.biometricMissing')}</Text>
+          </View>
+          <Switch
+            value={biometricEnabled}
+            disabled={!biometricAvailable}
+            onValueChange={toggleBiometric}
+            trackColor={{ false: '#d0c7be', true: theme.colors.primarySoft }}
+            thumbColor={biometricEnabled ? theme.colors.primary : '#f4f3f4'}
+          />
+        </View>
         <Button
-          title="File d'attente hors ligne"
+          title={t('profile.syncQueue')}
           variant="ghost"
           icon="chevron-forward"
           iconPosition="right"
           onPress={() => navigation.navigate('AgentSyncQueue')}
         />
         <Button
-          title="Mes disponibilités"
+          title={t('profile.availability')}
           variant="ghost"
           icon="chevron-forward"
           iconPosition="right"
           onPress={() => navigation.navigate('AgentAvailability')}
         />
         <Button
-          title="Messages avec mon superviseur"
+          title={t('profile.chat')}
           variant="ghost"
           icon="chevron-forward"
           iconPosition="right"
           onPress={() => navigation.navigate('AgentChat')}
         />
         <Button
-          title="Scanner l'inventaire"
+          title={t('profile.inventory')}
           variant="ghost"
           icon="chevron-forward"
           iconPosition="right"
           onPress={() => navigation.navigate('AgentInventoryScanner')}
         />
         <Button
-          title="Modifier le mot de passe"
+          title={t('profile.password')}
           variant="ghost"
           icon="chevron-forward"
           iconPosition="right"
@@ -105,7 +156,7 @@ export default function AgentProfileScreen() {
       </View>
 
       <Button
-        title="Se déconnecter"
+        title={t('profile.logout')}
         icon="log-out-outline"
         onPress={() => {
           logout();
@@ -163,4 +214,16 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontWeight: '600',
   },
+  langRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  langChip: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+  },
+  langChipOn: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  langText: { color: theme.colors.ink, fontWeight: '600' },
+  langTextOn: { color: '#fff' },
 });

@@ -214,3 +214,62 @@ type ApiIntervention = {
   observation?: string;
   agents?: { id: string; name: string }[];
 };
+
+type MyPlanningOccurrence = {
+  date: string;
+  stopId: string;
+  siteId: string;
+  siteName: string;
+  templateId: string;
+  categoryLabel?: string | null;
+  startTime: string;
+  endTime: string;
+  agentIds: string[];
+  agents: Array<{ id: string; name: string }>;
+  source: 'real' | 'projected';
+  interventionId?: string;
+};
+
+/** Préfixe des passages prévus dont la mission n'est pas encore créée (pas de fiche à ouvrir). */
+export const PLANNED_ID_PREFIX = 'planned:';
+export const isPlannedOnly = (intervention: Pick<Intervention, 'id'>) => intervention.id.startsWith(PLANNED_ID_PREFIX);
+
+/**
+ * Missions de l'agent sur une période, passages prévus par les gabarits compris : les missions ne
+ * sont créées que peu avant leur début, sans cela le planning des jours suivants serait vide.
+ */
+export async function listMyMissions(token: string, startDate: string, endDate: string, agentId: string) {
+  const [real, planning] = await Promise.all([
+    fetchInterventions(token, { startDate, endDate, agentId }),
+    apiFetch<MyPlanningOccurrence[]>({
+      path: `/interventions/my-planning?startDate=${startDate}&endDate=${endDate}`,
+      token,
+    }).catch(() => [] as MyPlanningOccurrence[]),
+  ]);
+  const covered = new Set(real.map((i) => `${i.date.slice(0, 10)}:${i.generatedFromStopId ?? ''}`));
+  const projected: Intervention[] = planning
+    .filter((o) => o.source === 'projected' && !covered.has(`${o.date}:${o.stopId}`))
+    .map((o) => ({
+      id: `${PLANNED_ID_PREFIX}${o.stopId}:${o.date}`,
+      siteId: o.siteId,
+      siteName: o.siteName,
+      date: o.date,
+      startTime: o.startTime,
+      endTime: o.endTime,
+      type: 'REGULAR',
+      label: o.categoryLabel ?? undefined,
+      status: 'PLANNED',
+      agentIds: o.agentIds,
+      agents: o.agents,
+      truckLabels: [],
+      generatedFromStopId: o.stopId,
+      generatedFromTemplateId: o.templateId,
+    }));
+  return [...real, ...projected].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+}
+
+/** Même découpage de dates que listInterventionsByRange, passages prévus compris. */
+export async function listMyMissionsByRange(token: string, range: 'today' | 'week', agentId: string) {
+  const { startDate, endDate } = rangeToFilters(range);
+  return listMyMissions(token, startDate!, endDate!, agentId);
+}

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException, OnModuleInit } from '@nestjs/common';
 import { Site } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as QRCode from 'qrcode';
@@ -71,6 +71,24 @@ export class SitesService implements OnModuleInit {
       toleranceMinutes: (record as any).toleranceMinutes ?? undefined,
       minimumDurationMinutes: (record as any).minimumDurationMinutes ?? undefined,
     };
+  }
+
+  /**
+   * Un agent ne consulte que les sites où il travaille : une mission sur les 60 derniers jours ou à
+   * venir, ou un créneau du gabarit du site (le code d'accès figure sur la fiche).
+   */
+  async assertAgentWorksOnSite(siteId: string, userId: string) {
+    const since = new Date(Date.now() - 60 * 86_400_000);
+    const [assignment, stop] = await Promise.all([
+      this.prisma.interventionAssignment.findFirst({
+        where: { userId, intervention: { siteId, date: { gte: since } } },
+        select: { userId: true },
+      }),
+      this.prisma.templateStop.findFirst({ where: { agentIds: { has: userId }, template: { siteId } }, select: { id: true } }),
+    ]);
+    if (!assignment && !stop) {
+      throw new ForbiddenException("Ce site ne fait pas partie de vos missions");
+    }
   }
 
   private ensureExists(id: string) {

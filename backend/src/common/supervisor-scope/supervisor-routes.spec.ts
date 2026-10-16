@@ -89,6 +89,8 @@ const SUPERVISOR_ROUTES: Record<string, Protection> = {
   'GET /supervision/agents/:id': 'perimetre',
   'GET /supervision/sites/:id': 'perimetre',
   'GET /supervision/today': 'perimetre',
+  'GET /interventions/me/month-summary': 'soi',
+  'GET /interventions/my-planning': 'soi',
   'GET /interventions/templates/:id/pauses': 'perimetre',
   'POST /interventions/templates/:id/duplicate': 'perimetre',
   'GET /inventory/:id/movements': 'perimetre',

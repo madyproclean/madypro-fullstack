@@ -135,7 +135,7 @@ export class ReportsService implements OnModuleInit {
   }
 
   private combine(dateStr: string, time: string) {
-    return new Date(`${dateStr}T${time}:00`);
+    return parisDateTime(dateStr, time);
   }
 
   async summary(date?: string) {
@@ -185,7 +185,7 @@ export class ReportsService implements OnModuleInit {
           attendanceInfo?.status === 'CANCELLED'
             ? 'ABSENT'
             : attendanceInfo?.checkIn
-            ? new Date(`${defaultDate}T${attendanceInfo.checkIn}:00`) > plannedStart
+            ? this.combine(defaultDate, attendanceInfo.checkIn) > plannedStart
               ? 'LATE'
               : 'ON_TIME'
             : 'ABSENT';

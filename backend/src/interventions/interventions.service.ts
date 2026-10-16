@@ -31,6 +31,7 @@ import { haversineDistanceMeters } from '../common/utils/geo';
 import { checkAssignmentConflicts as checkAssignmentConflictsShared } from '../common/utils/assignment-conflicts.util';
 import { checkAttendanceCompleteness } from './attendance-completeness.util';
 import { isFrenchPublicHoliday } from '../common/utils/french-holidays';
+import { parisDateTime } from '../common/utils/paris-time';
 import {
   applyTemplateExceptions,
   computeTemplateOccurrences,
@@ -118,7 +119,7 @@ export class InterventionsService implements OnModuleInit {
   private AUTO_CLOSE_GRACE_MS = 30 * 60 * 1000; // 30 minutes de marge après l'heure de fin planifiée
   private AUTO_CLOSE_ENABLED = true;
   private AUTO_CLOSE_INCOMPLETE_STATUS: InterventionStatus = 'NEEDS_REVIEW';
-  private UPCOMING_WINDOW_MS = 15 * 60 * 1000;
+  private UPCOMING_WINDOW_MS = 30 * 60 * 1000;
   private readonly upcomingNotified = new Set<string>(); // key: interventionId:userId
   private END_REMINDER_WINDOW_MS = 10 * 60 * 1000;
   private readonly endReminderNotified = new Set<string>(); // key: interventionId:userId
@@ -149,7 +150,7 @@ export class InterventionsService implements OnModuleInit {
     this.AUTO_CLOSE_GRACE_MS = (graceMinutes && graceMinutes > 0 ? graceMinutes : 30) * 60 * 1000;
     this.AUTO_CLOSE_ENABLED = enabled !== false;
     this.AUTO_CLOSE_INCOMPLETE_STATUS = incompleteStatus;
-    const upcomingMinutes = Number(process.env.UPCOMING_WINDOW_MINUTES ?? '15');
+    const upcomingMinutes = Number(process.env.UPCOMING_WINDOW_MINUTES ?? '30');
     if (Number.isFinite(upcomingMinutes) && upcomingMinutes > 0) {
       this.UPCOMING_WINDOW_MS = upcomingMinutes * 60 * 1000;
     }
@@ -245,9 +246,10 @@ export class InterventionsService implements OnModuleInit {
           if (!tokens) {
             this.logger.warn(`[Push] Aucun token pour agent ${assignment.userId} (intervention ${record.id})`);
           }
+          const minutesLeft = Math.max(1, Math.round((startAt.getTime() - now.getTime()) / 60_000));
           await this.notifications.send({
-            title: 'Intervention à venir',
-            message: `${(record as any).site?.name ?? 'Site'} · ${record.startTime}-${record.endTime}`,
+            title: `Mission dans ${minutesLeft} min`,
+            message: `${(record as any).site?.name ?? 'Site'} · ${record.startTime}-${record.endTime}. Pensez à pointer votre arrivée.`,
             audience: 'AGENT',
             targetId: assignment.userId,
             data: { interventionId: record.id },
@@ -295,13 +297,23 @@ export class InterventionsService implements OnModuleInit {
         intervention.attendances.filter((a) => a.checkInTime).map((a) => a.userId),
       );
       const missingAgents = intervention.assignments.filter((a) => !checkedInIds.has(a.userId));
-      if (!missingAgents.length || !intervention.site.supervisors.length) continue;
+      if (!missingAgents.length) continue;
 
       for (const assignment of missingAgents) {
         const key = `${intervention.id}:${assignment.userId}`;
         if (this.missedCheckInNotified.has(key)) continue;
         this.missedCheckInNotified.add(key);
         const agentName = `${assignment.user.firstName} ${assignment.user.lastName}`.trim();
+        // Rappel à l'agent lui-même : souvent il est sur place mais a oublié de pointer.
+        await this.notifications
+          .send({
+            title: 'Vous n’avez pas pointé',
+            message: `${(intervention as any).site?.name ?? 'Votre mission'} a commencé à ${intervention.startTime} : pointez votre début dans l’application.`,
+            audience: 'AGENT',
+            targetId: assignment.userId,
+            data: { interventionId: intervention.id },
+          })
+          .catch((err) => this.logger.warn(`Rappel de pointage à l'agent échoué: ${(err as Error).message}`));
         for (const supervisor of intervention.site.supervisors) {
           try {
             await this.notifications.send({
@@ -345,8 +357,9 @@ export class InterventionsService implements OnModuleInit {
     return date;
   }
 
+  /** Horaire de Paris → instant réel, quel que soit le fuseau du serveur (souvent UTC en production). */
   private combine(dateStr: string, time: string) {
-    return new Date(`${dateStr}T${time}:00`);
+    return parisDateTime(dateStr, time);
   }
 
   /**
@@ -484,8 +497,7 @@ export class InterventionsService implements OnModuleInit {
 
   private startDateTime(record: InterventionRecord) {
     const dateStr = record.date.toISOString().slice(0, 10);
-    const start = record.startTime ?? '00:00';
-    return new Date(`${dateStr}T${start}:00.000Z`);
+    return parisDateTime(dateStr, record.startTime ?? '00:00');
   }
 
   /**
@@ -1057,7 +1069,7 @@ export class InterventionsService implements OnModuleInit {
       throw new ForbiddenException('Seul le superviseur peut valider une intervention');
     }
     if (status === 'COMPLETED' && viewer.role === 'AGENT') {
-      const endDateTime = new Date(`${record.date.toISOString().slice(0, 10)}T${record.endTime || '23:59'}:00.000Z`);
+      const endDateTime = parisDateTime(record.date.toISOString().slice(0, 10), record.endTime || '23:59');
       const now = new Date();
       const graceMs = 30 * 60 * 1000;
       if (now.getTime() < endDateTime.getTime() + graceMs) {
@@ -2259,6 +2271,55 @@ export class InterventionsService implements OnModuleInit {
       actorId,
       actorRole,
     );
+  }
+
+  /**
+   * Récapitulatif du mois pour l'agent : heures prévues (passages des gabarits, missions pas encore
+   * créées comprises), heures faites (pointages), missions faites et à venir, retards.
+   */
+  async myMonthSummary(userId: string, month?: string) {
+    const target = month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : this.todayParis().slice(0, 7);
+    const [year, m] = target.split('-').map(Number);
+    const startDate = `${target}-01`;
+    const endDate = new Date(Date.UTC(year, m, 0)).toISOString().slice(0, 10);
+    const today = this.todayParis();
+    const [planning, attendances, done] = await Promise.all([
+      this.getPlanning({ startDate, endDate, agentId: userId }),
+      this.prisma.attendance.findMany({
+        where: { userId, date: { gte: this.toDateOnly(startDate), lte: this.endOfDay(endDate) }, status: { not: 'CANCELLED' } },
+        select: { checkInTime: true, arrivalTime: true, checkOutTime: true, plannedStart: true },
+      }),
+      this.prisma.intervention.count({
+        where: {
+          date: { gte: this.toDateOnly(startDate), lte: this.endOfDay(endDate) },
+          status: { in: ['COMPLETED', 'NEEDS_REVIEW'] },
+          assignments: { some: { userId } },
+        },
+      }),
+    ]);
+    const minutes = (a: string, b: string) => {
+      const [ah, am] = a.split(':').map(Number);
+      const [bh, bm] = b.split(':').map(Number);
+      const d = bh * 60 + bm - (ah * 60 + am);
+      return d > 0 ? d : d + 24 * 60;
+    };
+    const plannedMinutes = planning.reduce((n, o) => n + minutes(o.startTime, o.endTime), 0);
+    const tolerance = 10;
+    let workedMinutes = 0;
+    let late = 0;
+    for (const a of attendances) {
+      const start = a.checkInTime ?? a.arrivalTime;
+      if (start && a.checkOutTime) workedMinutes += Math.max(0, (a.checkOutTime.getTime() - start.getTime()) / 60_000);
+      if (start && a.plannedStart && start.getTime() > a.plannedStart.getTime() + tolerance * 60_000) late += 1;
+    }
+    return {
+      month: target,
+      plannedHours: Math.round(plannedMinutes / 6) / 10,
+      workedHours: Math.round(workedMinutes / 6) / 10,
+      missionsDone: done,
+      missionsUpcoming: planning.filter((o) => o.date >= today && (!o.status || o.status === 'PLANNED')).length,
+      late,
+    };
   }
 
   async toggleTemplate(id: string, active: boolean) {

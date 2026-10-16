@@ -97,6 +97,30 @@ export class InterventionsController {
     return this.service.getSiteRoster(siteId);
   }
 
+  /**
+   * Planning de l'utilisateur connecté (agent) : passages prévus par les gabarits, y compris ceux
+   * dont la mission n'est pas encore créée (elle l'est peu avant le début).
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
+  @Get('my-planning')
+  async getMyPlanning(@Req() req: Request, @Query('startDate') startDate: string, @Query('endDate') endDate: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate ?? '')) {
+      throw new BadRequestException('Dates attendues au format AAAA-MM-JJ');
+    }
+    const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000;
+    if (days < 0 || days > 93) throw new BadRequestException('Période de 3 mois au plus');
+    return this.service.getPlanning({ startDate, endDate, agentId: (req.user as any).sub });
+  }
+
+  /** Mes heures du mois (prévues, faites), missions faites et à venir, retards. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPERVISOR', 'AGENT')
+  @Get('me/month-summary')
+  myMonthSummary(@Req() req: Request, @Query('month') month?: string) {
+    return this.service.myMonthSummary((req.user as any).sub, month);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'SUPERVISOR')
   @Get('planning')

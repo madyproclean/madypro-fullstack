@@ -32,6 +32,8 @@ import AdminWebOnlyScreen from '@/screens/AdminWebOnlyScreen';
 import { useAuthContext } from '@/context/AuthContext';
 import { navigationRef } from './navigationRef';
 import { SupervisorNavigator } from './SupervisorNavigator';
+import LockScreen from '@/screens/LockScreen';
+import { MessageKey, useI18n } from '@/i18n';
 import { spaceForRole } from './spaceForRole';
 import { AgentStackParamList, AgentTabParamList, AuthStackParamList, RootStackParamList } from './types';
 
@@ -40,12 +42,12 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AgentStack = createNativeStackNavigator<AgentStackParamList>();
 const AgentTabs = createBottomTabNavigator<AgentTabParamList>();
 
-const agentTabMeta: Record<keyof AgentTabParamList, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  AgentHome: { label: 'Accueil', icon: 'home-outline' },
-  AgentHistory: { label: 'Historique', icon: 'time-outline' },
-  AgentRequests: { label: 'Absences', icon: 'calendar-outline' },
-  AgentNotifications: { label: 'Notifications', icon: 'notifications-outline' },
-  AgentProfile: { label: 'Profil', icon: 'person-circle-outline' },
+const agentTabKeys: Record<keyof AgentTabParamList, { key: MessageKey; icon: keyof typeof Ionicons.glyphMap }> = {
+  AgentHome: { key: 'tabs.home', icon: 'home-outline' },
+  AgentHistory: { key: 'tabs.history', icon: 'time-outline' },
+  AgentRequests: { key: 'tabs.requests', icon: 'calendar-outline' },
+  AgentNotifications: { key: 'tabs.notifications', icon: 'notifications-outline' },
+  AgentProfile: { key: 'tabs.profile', icon: 'person-circle-outline' },
 };
 
 function AuthNavigator() {
@@ -58,6 +60,14 @@ function AuthNavigator() {
 }
 
 function AgentTabNavigator() {
+  const { t } = useI18n();
+  const agentTabMeta = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(agentTabKeys).map(([name, meta]) => [name, { label: t(meta.key), icon: meta.icon }]),
+      ) as Record<keyof AgentTabParamList, { label: string; icon: keyof typeof Ionicons.glyphMap }>,
+    [t],
+  );
   return (
     <AgentTabs.Navigator
       screenOptions={{
@@ -111,7 +121,7 @@ function AgentNavigator() {
 }
 
 export function AppNavigator() {
-  const { user, isReady: isAuthReady } = useAuthContext();
+  const { user, isReady: isAuthReady, locked } = useAuthContext();
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -154,10 +164,12 @@ export function AppNavigator() {
 
         {showAuth ? <RootStack.Screen name="Auth" component={AuthNavigator} /> : null}
 
+        {user && locked ? <RootStack.Screen name="Locked" component={LockScreen} /> : null}
+
         {/* Aiguillage par rôle : chaque profil n'a accès qu'à son propre espace. */}
-        {space === 'Agent' ? <RootStack.Screen name="Agent" component={AgentNavigator} /> : null}
-        {space === 'Supervisor' ? <RootStack.Screen name="Supervisor" component={SupervisorNavigator} /> : null}
-        {space === 'AdminWebOnly' ? <RootStack.Screen name="AdminWebOnly" component={AdminWebOnlyScreen} /> : null}
+        {locked ? null : space === 'Agent' ? <RootStack.Screen name="Agent" component={AgentNavigator} /> : null}
+        {!locked && space === 'Supervisor' ? <RootStack.Screen name="Supervisor" component={SupervisorNavigator} /> : null}
+        {!locked && space === 'AdminWebOnly' ? <RootStack.Screen name="AdminWebOnly" component={AdminWebOnlyScreen} /> : null}
       </RootStack.Navigator>
     </NavigationContainer>
   );
